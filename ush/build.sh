@@ -21,9 +21,17 @@ REGRESSION_TESTS=${REGRESSION_TESTS:-"YES"} # Build regression test suite
 source $DIR_ROOT/ush/detect_machine.sh
 
 # Load modules
+#set -x
 source $DIR_ROOT/ush/module-setup.sh
 module use $DIR_ROOT/modulefiles
 module load gsi_$MACHINE_ID
+module list
+module unload ncdiag
+module unload netcdf
+module unload hdf5
+module load netcdf/4.7.4
+module load hdf5/1.10.6
+module load ncdiag
 module list
 
 # Set CONTROLPATH variables for Regression testing on supported MACHINE_ID
@@ -33,6 +41,10 @@ elif [[ $MACHINE_ID = wcoss_dell_p3 ]] ; then
     CONTROLPATH="/gpfs/dell2/emc/modeling/noscrub/Michael.Lueken/svn1/install/bin"
 elif [[ $MACHINE_ID = hera.intel ]] ; then
     CONTROLPATH="/scratch1/NCEPDEV/da/Michael.Lueken/svn1/install/bin"
+    #export CRTM_LIB=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/REL-2.4.0/crtm_v2.4.0/lib/libcrtm.a
+    #export CRTM_INC=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/REL-2.4.0/crtm_v2.4.0/include
+    export CRTM_LIB=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/crtm_im/crtm_im/lib64/libcrtm_static.a
+    export CRTM_INC=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/crtm_im/crtm_im/module/crtm/Intel/19.1.2.20200623
 fi
 
 # Collect BUILD Options

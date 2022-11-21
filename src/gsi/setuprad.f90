@@ -246,7 +246,8 @@ contains
       npred,jpch_rad,varch,varch_cld,iuse_rad,icld_det,nusis,fbias,retrieval,b_rad,pg_rad,&
       air_rad,ang_rad,adp_anglebc,angord,ssmis_precond,emiss_bc,upd_pred, &
       passive_bc,ostats,rstats,newpc4pred,radjacnames,radjacindxs,nsigradjac,nvarjac, &
-      varch_sea,varch_land,varch_ice,varch_snow,varch_mixed
+      varch_sea,varch_land,varch_ice,varch_snow,varch_mixed,crtm_overlap,allsky_verbose, &
+      allsky_gfdl
   use gsi_nstcouplermod, only: nstinfo
   use read_diag, only: get_radiag,ireal_radiag,ipchan_radiag
   use guess_grids, only: sfcmod_gfs,sfcmod_mm5,comp_fact10
@@ -272,7 +273,7 @@ contains
   use nc_diag_write_mod, only: nc_diag_init, nc_diag_header, nc_diag_metadata, &
        nc_diag_write, nc_diag_data2d, nc_diag_chaninfo_dim_set, nc_diag_chaninfo
   use gsi_4dvar, only: nobs_bins,hr_obsbin,l4dvar
-  use gridmod, only: nsig,regional,get_ij
+  use gridmod, only: nsig,regional,get_ij,msig
   use satthin, only: super_val1
   use constants, only: quarter,half,tiny_r_kind,zero,one,deg2rad,rad2deg,one_tenth, &
       two,three,cg_term,wgtlim,r100,r10,r0_01,r_missing
@@ -289,6 +290,7 @@ contains
   use crtm_interface, only: ilzen_ang2,iscan_ang2,iszen_ang2,isazi_ang2
   use clw_mod, only: calc_clw, ret_amsua, gmi_37pol_diff
   use qcmod, only: igood_qc,ifail_gross_qc,ifail_interchan_qc,ifail_crtm_qc,ifail_satinfo_qc,qc_noirjaco3,ifail_cloud_qc
+  use qcmod, only: ifail_outside_symnorm
   use qcmod, only: ifail_cao_qc,cao_check  
   use qcmod, only: ifail_iland_det, ifail_isnow_det, ifail_iice_det, ifail_iwater_det, ifail_imix_det, &
                    ifail_iomg_det, ifail_isst_det, ifail_itopo_det,ifail_iwndspeed_det
@@ -299,7 +301,8 @@ contains
   use state_vectors, only: svars3d, levels, svars2d, ns3d
   use oneobmod, only: lsingleradob,obchan,oblat,oblon,oneob_type
   use correlated_obsmod, only: corr_adjust_jacobian, idnames
-  use radiance_mod, only: rad_obs_type,radiance_obstype_search,radiance_ex_obserr,radiance_ex_biascor
+  use radiance_mod, only: rad_obs_type,radiance_obstype_search,radiance_ex_obserr,radiance_ex_biascor, &
+                          n_clouds_jac,cloud_names_jac
   use sparsearr, only: sparr2, new, writearray, size, fullarray
   use radiance_mod, only: radiance_ex_obserr_gmi,radiance_ex_biascor_gmi
 
@@ -324,7 +327,7 @@ contains
   character(len=*),parameter:: myname="setuprad"
 
 ! Declare local variables
-  character(128) diag_rad_file
+  character(128) diag_rad_file,jac_rad_file,jacm_rad_file
 
   integer(i_kind) iextra,jextra,error_status
   integer(i_kind) ich9,isli,icc,iccm,mm1,ixx
@@ -332,7 +335,7 @@ contains
   integer(i_kind) n,nlev,kval,ibin,ioff,ioff0,iii,ijacob
   integer(i_kind) ii,jj,idiag,inewpc,nchanl_diag
   integer(i_kind) nadir,kraintype,ierrret
-  integer(i_kind) ioz,ius,ivs,iqs,iwrmype
+  integer(i_kind) ioz,ius,ivs,iqs,iwrmype,itv,iqv
   integer(i_kind) iversion_radiag, istatus
   integer(i_kind) cor_opt,iinstr,chan_count
   character(len=80) covtype
@@ -402,7 +405,8 @@ contains
   real(r_kind),dimension(nchanl):: cld_rbc_idx,cld_rbc_idx2
   real(r_kind),dimension(nchanl):: tcc         
   real(r_kind) :: ptau5deriv, ptau5derivmax
-  real(r_kind) :: clw_guess,clw_guess_retrieval,ciw_guess,rain_guess,snow_guess,clw_avg
+  real(r_kind) :: clw_guess,clw_guess_retrieval,ciw_guess,clw_avg
+  real(r_kind) :: rain_guess,snow_guess,graupel_guess
   real(r_kind) :: tnoise_save
   real(r_kind),dimension(:), allocatable :: rsqrtinv
   real(r_kind),dimension(:), allocatable :: rinvdiag
@@ -432,6 +436,15 @@ contains
   type(obs_diag),pointer:: my_diag
   type(obs_diags),pointer:: my_diagLL
   type(rad_obs_type) :: radmod
+
+  logical :: pcp_mask
+
+  real(r_single),dimension(msig*8,nchanl):: jacobian0
+  real(r_single),dimension(msig,10):: atprofile
+  real(r_single),dimension(nsig):: jactmp
+
+  integer(i_kind) :: icount,indx
+  integer(i_kind),allocatable,dimension(:) :: icw
 
   type(obsLList),pointer,dimension(:):: radhead
   type(fptr_obsdiagNode),dimension(nchanl):: odiags
@@ -611,6 +624,24 @@ contains
      ivs=radjacindxs(ivs)
   endif
 
+  itv =getindex(radjacnames,'tv')
+  if(itv>0) itv=radjacindxs(itv)
+  iqv =getindex(radjacnames,'q' )
+  if(iqv>0) iqv=radjacindxs(iqv)
+
+  if (n_clouds_jac>0) then
+     allocate(icw(max(n_clouds_jac,1)))
+     icw=-1
+     icount=0
+     do ii=1,n_clouds_jac
+        indx=getindex(radjacnames,trim(cloud_names_jac(ii)))
+        if (indx>0) then
+           icount=icount+1
+           icw(icount)=radjacindxs(indx)
+        end if
+     end do
+  end if
+
 ! Initialize ozone jacobian flags to .false. (retain ozone jacobian)
   zero_irjaco3_pole = .false.
 
@@ -762,6 +793,7 @@ contains
   if (rad_diagsave .and. nchanl_diag > 0) then
      if (binary_diag) call init_binary_diag_
      if (netcdf_diag) call init_netcdf_diag_
+     if (allsky_verbose) call init_binary_jac_
   endif
 
 ! Load data array for current satellite
@@ -894,22 +926,50 @@ contains
 !       Output both tsim and tsim_clr for allsky
         tsim_clr=zero
         tcc=zero
+        pcp_mask=.false.
+        jacobian0=zero
+        atprofile=zero
         total_cloud_cover=zero
         if (radmod%lcloud_fwd) then
-          call call_crtm(obstype,dtime,data_s(:,n),nchanl,nreal,ich, &
-             tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,prsltmp,prsitmp, &
-             trop5,tzbgr,dtsavg,sfc_speed, &
-             tsim,emissivity,ptau5,ts,emissivity_k, &
-                temp,wmix,jacobian,error_status,tsim_clr=tsim_clr,tcc=tcc, & 
-                tcwv=tcwv,hwp_ratio=hwp_ratio,stability=stability)         
+          if (allsky_verbose) then
+             call call_crtm(obstype,dtime,data_s(:,n),nchanl,nreal,ich, &
+                  tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,graupel_guess, &
+                  prsltmp,prsitmp,trop5,tzbgr,dtsavg,sfc_speed, &
+                  tsim,emissivity,ptau5,ts,emissivity_k, &
+                  temp,wmix,jacobian,error_status,tsim_clr=tsim_clr,tcc=tcc, & 
+                  tcwv=tcwv,hwp_ratio=hwp_ratio,stability=stability, &
+                  pcp_mask=pcp_mask,jacobian0=jacobian0,atprofile=atprofile)        
+   
+             if (pcp_mask) then
+                write(44)((atprofile(i,j),i=1,msig),j=1,10)
+                write(44)((jacobian0(i,j),i=1,msig*8),j=1,nchanl)
+                do j=1,nchanl
+                   jactmp=jacobian(itv+1:itv+nsig,j)
+                   write(444)jactmp
+                   jactmp=jacobian(iqv+1:iqv+nsig,j)
+                   write(444)jactmp
+                   do ii=1,n_clouds_jac
+                      jactmp=jacobian(icw(ii)+1:icw(ii)+nsig,j)
+                      write(444)jactmp
+                   end do
+                end do
+             end if
+          else
+             call call_crtm(obstype,dtime,data_s(:,n),nchanl,nreal,ich, &
+                  tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,graupel_guess, &
+                  prsltmp,prsitmp,trop5,tzbgr,dtsavg,sfc_speed, &
+                  tsim,emissivity,ptau5,ts,emissivity_k, &
+                  temp,wmix,jacobian,error_status,tsim_clr=tsim_clr,tcc=tcc, &
+                  tcwv=tcwv,hwp_ratio=hwp_ratio,stability=stability)
+          end if
           if(gmi) then
              gmi_low_angles(1:3)=data_s(ilzen_ang:iscan_ang,n)
              gmi_low_angles(4:5)=data_s(iszen_ang:isazi_ang,n)
              data_s(ilzen_ang:iscan_ang, n) = data_s(ilzen_ang2:iscan_ang2, n)
              data_s(iszen_ang:isazi_ang, n) = data_s(iszen_ang2:isazi_ang2, n)
              call call_crtm(obstype,dtime,data_s(:,n),nchanl,nreal,ich, &
-                tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,prsltmp,prsitmp, &
-                 trop5,tzbgr,dtsavg,sfc_speed, &
+                tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,graupel_guess, &
+                prsltmp,prsitmp,trop5,tzbgr,dtsavg,sfc_speed, &
                  tsim2,emissivity2,ptau52,ts2,emissivity_k2, &
                  temp2,wmix2,jacobian2,error_status,tsim_clr=tsim_clr2,tcc=tcc,&
                  tcwv=tcwv,hwp_ratio=hwp_ratio,stability=stability)
@@ -932,8 +992,8 @@ contains
           cld = total_cloud_cover
         else
           call call_crtm(obstype,dtime,data_s(:,n),nchanl,nreal,ich, &
-             tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,prsltmp,prsitmp, &
-             trop5,tzbgr,dtsavg,sfc_speed, &
+             tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,graupel_guess, &
+             prsltmp,prsitmp,trop5,tzbgr,dtsavg,sfc_speed, &
              tsim,emissivity,ptau5,ts,emissivity_k, &
              temp,wmix,jacobian,error_status)
           if(gmi) then
@@ -942,10 +1002,10 @@ contains
              data_s(ilzen_ang:iscan_ang, n) = data_s(ilzen_ang2:iscan_ang2, n)
              data_s(iszen_ang:isazi_ang, n) = data_s(iszen_ang2:isazi_ang2, n)
              call call_crtm(obstype,dtime,data_s(:,n),nchanl,nreal,ich, &
-                tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,prsltmp,prsitmp, &
-                 trop5,tzbgr,dtsavg,sfc_speed, &
-                 tsim2,emissivity2,ptau52,ts2,emissivity_k2, &
-                 temp2,wmix2,jacobian2,error_status)
+                tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,graupel_guess, &
+                prsltmp,prsitmp,trop5,tzbgr,dtsavg,sfc_speed, &
+                tsim2,emissivity2,ptau52,ts2,emissivity_k2, &
+                temp2,wmix2,jacobian2,error_status)
              ! merge 
              emissivity(10:13)  = emissivity2(10:13)
              ts(10:13)          = ts2(10:13)
@@ -1031,7 +1091,7 @@ contains
         cldeff_fg=zero  
         if(microwave .and. sea) then 
            if(radmod%lcloud_fwd .and. (amsua .or. atms)) then
-              call ret_amsua(tb_obs,nchanl,tsavg5,zasat,clw_obs,ierrret,scat)
+              call ret_amsua(tb_obs,nchanl,tsavg5,zasat,clw_obs,ierrret,atms,scat)
               scatp=scat 
            else
               call calc_clw(nadir,tb_obs,tsim,ich,nchanl,no85GHz,amsua,ssmi,ssmis,amsre,atms, &
@@ -1240,7 +1300,7 @@ contains
               tsim_clr_bc(i)=tsim_clr_bc(i)+predbias(npred+2,i)
            end do
 
-           if(amsua.or.atms) call ret_amsua(tsim_bc,nchanl,tsavg5,zasat,clw_guess_retrieval,ierrret)
+           if(amsua.or.atms) call ret_amsua(tsim_bc,nchanl,tsavg5,zasat,clw_guess_retrieval,ierrret,atms)
            if(gmi) then
              call gmi_37pol_diff(tsim_bc(6),tsim_bc(7),tsim_clr_bc(6),tsim_clr_bc(7),clw_guess_retrieval,ierrret)
              call gmi_37pol_diff(tb_obs(6),tb_obs(7),tsim_clr_bc(6),tsim_clr_bc(7),clw_obs,ierrret)
@@ -1310,6 +1370,23 @@ contains
            if (radmod%ex_obserr=='ex_obserr3') &
               call radiance_ex_obserr_gmi(radmod,nchanl,clw_obs,clw_guess_retrieval,tnoise,tnoise_cld,error0) 
         end if
+
+!       screen out observations with normalized (by symmetric error) FG
+!       departure > 2.5
+!        if(radmod%lcloud_fwd .and. radmod%ex_obserr=='ex_obserr1' .and. &
+!           eff_area .and. allsky_gfdl) then
+!           do i=1,nchanl
+!              if (abs(tbc(i)) > error0(i)*2.5_r_kind) then
+!                 if (amsua .and. (i <= 6 .or. i == 15)) then
+!                     varinv(i)=zero
+!                     id_qc(i) = ifail_outside_symnorm
+!                 else if (atms .and. (i <= 7 .or. i >= 16)) then
+!                     varinv(i)=zero
+!                     id_qc(i) = ifail_outside_symnorm
+!                 end if
+!              endif
+!           end do
+!        endif
 
         do i=1,nchanl
            mm=ich(i)
@@ -2167,7 +2244,8 @@ contains
 
   if (rad_diagsave .and. nchanl_diag > 0) then
      if (netcdf_diag) call nc_diag_write
-     if(binary_diag) call final_binary_diag_
+     if (binary_diag) call final_binary_diag_
+     if (allsky_verbose) call final_binary_jac_
      if (lextra .and. allocated(diagbufex)) deallocate(diagbufex)
   endif
 
@@ -2228,6 +2306,22 @@ contains
         end do
      endif
   end subroutine init_binary_diag_
+
+  subroutine init_binary_jac_
+     filex=obstype
+     write(string,1976) jiter
+1976 format('_',i2.2)
+     jac_rad_file= trim(dirname) // trim(filex) // '_' // trim(dplat(is)) // '_jacobian' // trim(string)
+     jacm_rad_file= trim(dirname) // trim(filex) // '_' // trim(dplat(is)) // '_jacobianM' // trim(string)
+     if(init_pass) then
+        open(44,file=trim(jac_rad_file),form='unformatted',access='stream',status='unknown',position='rewind')
+        open(444,file=trim(jacm_rad_file),form='unformatted',access='stream',status='unknown',position='rewind')
+     else
+        open(44,file=trim(jac_rad_file),form='unformatted',access='stream',status='old',position='append')
+        open(444,file=trim(jacm_rad_file),form='unformatted',access='stream',status='old',position='append')
+     endif
+  end subroutine init_binary_jac_
+
   subroutine init_netcdf_diag_
   character(len=80) string
         filex=obstype
@@ -2379,10 +2473,17 @@ contains
               diagbuf(29) = r_missing
               diagbuf(30) = r_missing
            else
-              diagbuf(27) = data_s(itref,n)
-              diagbuf(28) = data_s(idtw,n)
-              diagbuf(29) = data_s(idtc,n)
-              diagbuf(30) = data_s(itz_tr,n)
+              if(radmod%lcloud_fwd .and. sea) then
+                 diagbuf(27) = ciw_guess
+                 diagbuf(28) = rain_guess
+                 diagbuf(29) = snow_guess
+                 diagbuf(30) = graupel_guess
+              else
+                 diagbuf(27) = data_s(itref,n)
+                 diagbuf(28) = data_s(idtw,n)
+                 diagbuf(29) = data_s(idtc,n)
+                 diagbuf(30) = data_s(itz_tr,n)
+              end if
            endif
 
            if (lwrite_peakwt) then
@@ -2607,7 +2708,7 @@ contains
 
                  call nc_diag_metadata("Vegetation_Fraction",   sngl(surface(1)%vegetation_fraction) )
                  call nc_diag_metadata("Snow_Depth",            sngl(surface(1)%snow_depth)         )
-                 call nc_diag_metadata("tpwc",            sngl(tpwc_obs)                    )
+                 call nc_diag_metadata("tpwc",                  sngl(tpwc_obs)                    )
                  call nc_diag_metadata("clw_guess_retrieval",   sngl(clw_guess_retrieval)           )
 
                  call nc_diag_metadata("Sfc_Wind_Speed",        sngl(surface(1)%wind_speed)         )
@@ -2617,6 +2718,20 @@ contains
                  call nc_diag_metadata("TPWC",                  sngl(tpwc_obs)                          )
                  call nc_diag_metadata("clw_obs",               sngl(clw_obs)                       )
                  call nc_diag_metadata("clw_guess",             sngl(clw_guess)                     )
+
+                 if(radmod%lcloud_fwd .and. allsky_verbose) then
+                    if (sea) then 
+                       call nc_diag_metadata("ciw_guess",      sngl(ciw_guess))
+                       call nc_diag_metadata("rain_guess",     sngl(rain_guess))
+                       call nc_diag_metadata("snow_guess",     sngl(snow_guess))
+                       call nc_diag_metadata("graupel_guess",  sngl(graupel_guess))
+                    else
+                       call nc_diag_metadata("ciw_guess", sngl(missing))
+                       call nc_diag_metadata("rain_guess", sngl(missing))
+                       call nc_diag_metadata("snow_guess", sngl(missing))
+                       call nc_diag_metadata("graupel_guess", sngl(missing))
+                    endif
+                 endif
 
                  if (nstinfo==0) then
                     data_s(itref,n)  = missing
@@ -2635,6 +2750,14 @@ contains
                  call nc_diag_metadata("Obs_Minus_Forecast_adjusted",           sngl(tbc0(ich_diag(i)  ))  )     ! observed - simulated Tb with bias corrrection (K)
                  errinv = sqrt(varinv0(ich_diag(i)))
                  call nc_diag_metadata("Inverse_Observation_Error",             sngl(errinv)          )
+                 if (radmod%lcloud_fwd) then
+                    call nc_diag_metadata("Sym_Observation_Error",              sngl(error0(ich_diag(i)))   )  ! symmetric observation error
+                    if (allsky_verbose) &
+                    call nc_diag_metadata("Cloud_Effect",                       sngl(cldeff_obs(ich_diag(i))) ) ! cloud effect w BC
+                    if (crtm_overlap < 5) &
+                    call nc_diag_metadata("Total_Cloud_Cover",               sngl(tcc(ich_diag(i)))      )  ! total cloud cover
+                 endif
+
                  if (save_jacobian .and. allocated(idnames)) then
                  call nc_diag_metadata("Observation_scaled",                    sngl(tb_obs(ich_diag(i)))  )     ! observed brightness temperature (K) scaled by R^{-1/2}
                  call nc_diag_metadata("Obs_Minus_Forecast_adjusted_scaled",    sngl(tbc(ich_diag(i)  ))  )     ! observed - simulated Tb with bias corrrection (K) scaled by R^{-1/2}
@@ -2681,6 +2804,9 @@ contains
                  call nc_diag_metadata("QC_Flag",                               sngl(id_qc(ich_diag(i))*useflag)  )          ! quality control mark or event indicator
 
                  call nc_diag_metadata("Emissivity",                            sngl(emissivity(ich_diag(i)))     )           ! surface emissivity
+                 if (radmod%lcloud_fwd .and. allsky_verbose) then 
+                    call nc_diag_metadata("Emissivity Jacobian",                sngl(emissivity_k(ich_diag(i)))   )           ! surface emissivity jacobian
+                 endif
                  call nc_diag_metadata("Weighted_Lapse_Rate",                   sngl(tlapchn(ich_diag(i)))        )           ! stability index
                  call nc_diag_metadata("dTb_dTs",                               sngl(ts(ich_diag(i)))             )           ! d(Tb)/d(Ts)
 
@@ -2730,5 +2856,11 @@ contains
   subroutine final_binary_diag_
   close(4)
   end subroutine final_binary_diag_
+
+  subroutine final_binary_jac_
+  close(44)
+  close(444)
+  end subroutine final_binary_jac_
+
  end subroutine setuprad
 end module rad_setup

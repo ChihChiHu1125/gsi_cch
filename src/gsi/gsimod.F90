@@ -72,7 +72,10 @@
                        ssmis_method,ssmis_precond,gmi_method,amsr2_method,bias_zero_start, &
                        reset_bad_radbc,cld_det_dec2bin,diag_version,lupdqc,lqcoef
   use radinfo, only: tzr_qc,tzr_bufrsave
-  use radinfo, only: crtm_coeffs_path,optconv
+  use radinfo, only: crtm_coeffs_path,optconv,crtm_overlap,rewopt,reiopt, &
+                     allsky_gfdl,allsky_verbose,cloud_mask_option,mask_threshold, &
+                     hydrotable_format,hydrotype
+
   use ozinfo, only: diag_ozone,init_oz
   use aeroinfo, only: diag_aero, init_aero, init_aero_vars, final_aero_vars
   use coinfo, only: diag_co,init_co
@@ -99,7 +102,7 @@
      factv,factl,factp,factg,factw10m,facthowv,factcldch,niter,niter_no_qc,biascor,&
      init_jfunc,qoption,cwoption,switch_on_derivatives,tendsflag,jiterstart,jiterend,R_option,&
      bcoption,diurnalbc,print_diag_pcg,tsensible,diag_precon,step_start,pseudo_q2,&
-     clip_supersaturation,cnvw_option
+     clip_supersaturation,cnvw_option,clip_hydrometeor
   use state_vectors, only: init_anasv,final_anasv
   use control_vectors, only: init_anacv,final_anacv,nrf,nvars,nrf_3d,cvars3d,cvars2d,&
      nrf_var,lcalc_gfdl_cfrac,incvars_to_zero,incvars_zero_strat,incvars_efold 
@@ -127,7 +130,7 @@
      use_gfs_nemsio,sfcnst_comb,use_readin_anl_sfcmask,use_sp_eqspace,final_grid_vars,&
      jcap_gfs,nlat_gfs,nlon_gfs,jcap_cut,wrf_mass_hybridcord,use_gfs_ncio,write_fv3_incr,&
      use_fv3_aero,grid_type_fv3_regional
-  use gridmod,only: l_reg_update_hydro_delz,fv3_cmaq_regional
+  use gridmod,only: l_reg_update_hydro_delz,fv3_cmaq_regional,dlnpm_ratio
   use guess_grids, only: ifact10,sfcmod_gfs,sfcmod_mm5,use_compress,nsig_ext,gpstop,commgpstop,commgpserrinf
   use gsi_io, only: init_io,lendian_in,verbose,print_obs_para
   use regional_io_mod, only: regional_io_class
@@ -521,6 +524,7 @@
 !     superfact- amount of supersaturation allowed 1.01 = 1% supersaturation
 !     limitqobs- limit q obs to be <= 100%RH based on model temperatures
 !     clip_supersaturation - flag to remove supersaturation during each outer loop default=.false.
+!     clip_hydrometeor - flag to set lower bound for hydrometers
 !     deltim   - model timestep
 !     dtphys   - physics timestep
 !     biascor  - background error bias correction coefficient
@@ -601,6 +605,31 @@
 !     oberror_tune - logical flag to tune oberror table  (true=on)
 !     perturb_fact -  magnitude factor for observation perturbation
 !     crtm_coeffs_path - path of directory w/ CRTM coeffs files
+!     hydrotable_format - hydrotable format (binary or netcdf)
+!     hydrotype(1)  - hydrotype for cloud water
+!     hydrotype(2)  - hydrotype for cloud ice
+!     hydrotype(3)  - hydrotype for rain
+!     hydrotype(4)  - hydrotype for snow
+!     hydrotype(5)  - hydrotype for graupel
+!     hydrotype(6)  - hydrotype for hail
+!     crtm_overlap  - cloud overlap options
+!                     crtm_overlap = 1, Maximum overlap
+!                     crtm_overlap = 2, Random overlap
+!                     crtm_overlap = 3, Maximum random overlap
+!                     crtm_overlap = 4, Average overlap
+!                     crtm_overlap = 5, Overcase overlap
+!     rewopt        - Options to compute cloud water effective radius
+!                     = 1, martin et al., 1994
+!                     = 2, martin et al., 1994, gfdl revision
+!                     = 3, martin et al., 1994, emc version
+!                     = 4, kiehl et al., 1994
+!                     = 5, kiehl, 1994
+!     reiopt        - Options to compute cloud ice effective radius
+!                     = 1, heymsfield and mcfarquhar, 1996
+!                     = 2, donner et al., 1997
+!                     = 3, fu, 2007
+!                     = 4, kristjansson et al., 2000
+!                     = 5, wyser, 1998
 !     print_diag_pcg - logical turn on of printing of GMAO diagnostics in pcgsoi.f90
 !     preserve_restart_date - if true, then do not update regional restart file date.
 !     tsensible - option to use sensible temperature as the analysis variable. works
@@ -725,7 +754,7 @@
 !            add use of guess file later for regional mode.
 
   namelist/setup/gencode,factqmin,factqmax,superfact,limitqobs,clip_supersaturation, &
-       factql,factqi,factqr,factqs,factqg, &     
+       clip_hydrometeor,factql,factqi,factqr,factqs,factqg, &     
        factv,factl,factp,factg,factw10m,facthowv,factcldch,R_option,deltim,dtphys,&
        biascor,bcoption,diurnalbc,&
        neutral_stability_windfact_2dvar,use_similarity_2dvar,&
@@ -738,7 +767,9 @@
        oneobtest,sfcmodel,dtbduv_on,ifact10,l_foto,offtime_data,&
        use_pbl,use_compress,nsig_ext,gpstop,commgpstop, commgpserrinf, &
        perturb_obs,perturb_fact,oberror_tune,preserve_restart_date, &
-       crtm_coeffs_path,berror_stats,tcp_posmatch,tcp_box, &
+       crtm_coeffs_path,hydrotable_format,hydrotype, &
+       crtm_overlap,rewopt,reiopt,allsky_gfdl,allsky_verbose,dlnpm_ratio, &
+       cloud_mask_option,mask_threshold,berror_stats,tcp_posmatch,tcp_box, &
        newpc4pred,adp_anglebc,angord,passive_bc,use_edges,emiss_bc,upd_pred,reset_bad_radbc,&
        ssmis_method, ssmis_precond, gmi_method, amsr2_method, bias_zero_start, &
        ec_amv_qc, lobsdiagsave, lobsdiag_forenkf, &

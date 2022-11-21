@@ -116,10 +116,9 @@ contains
 !$$$ end documentation block
 
     use kinds, only: i_kind,r_kind
-    use constants, only: qcmin
     use gridmod, only: sp_a,grd_a,lat2,lon2,nsig
     use guess_grids, only: ifilesig,nfldsig,ntguessig
-    use gsi_metguess_mod, only: gsi_metguess_bundle
+    use gsi_metguess_mod, only: gsi_metguess_bundle, gsi_metguess_get
     use gsi_bundlemod, only: gsi_bundlegetpointer
     use gsi_bundlemod, only: gsi_bundlecreate
     use gsi_bundlemod, only: gsi_grid
@@ -128,7 +127,9 @@ contains
     use gsi_bundlemod, only: gsi_bundledestroy
     use general_sub2grid_mod, only: sub2grid_info,general_sub2grid_create_info,general_sub2grid_destroy_info
     use mpimod, only: npe,mype
-    use cloud_efr_mod, only: cloud_calc_gfs,set_cloud_lower_bound
+    use cloud_efr_mod, only: cloud_calc_gfs,set_cloud_bound,cloud_calc_gfs2
+    use jfunc, only: clip_hydrometeor,cnvw_option
+    use radinfo, only: allsky_verbose
     use gridmod, only: fv3_full_hydro
 
     implicit none
@@ -136,8 +137,6 @@ contains
     character(len=*),parameter::myname_=myname//'*read_'
     character(24) filename
     integer(i_kind):: it, istatus, inner_vars, num_fields
-    integer(i_kind):: i,j,k
-
 
     real(r_kind),pointer,dimension(:,:  ):: ges_ps_it  =>NULL()
     real(r_kind),pointer,dimension(:,:  ):: ges_z_it   =>NULL()
@@ -154,7 +153,9 @@ contains
     real(r_kind),pointer,dimension(:,:,:):: ges_qr_it  => NULL()
     real(r_kind),pointer,dimension(:,:,:):: ges_qs_it  => NULL()
     real(r_kind),pointer,dimension(:,:,:):: ges_qg_it  => NULL()
-    real(r_kind),pointer,dimension(:,:,:):: ges_cf_it  => NULL()
+    real(r_kind),pointer,dimension(:,:,:):: ges_cf_it  =>NULL()
+    real(r_kind),pointer,dimension(:,:,:):: ges_cnvw_it =>NULL()
+    real(r_kind),pointer,dimension(:,:,:):: ges_cnvc_it =>NULL()
 
     type(sub2grid_info) :: grd_t
     logical regional
@@ -163,26 +164,34 @@ contains
     type(gsi_bundle) :: atm_bundle
     type(gsi_grid)   :: atm_grid
     integer(i_kind),parameter :: n2d=2
-    ! integer(i_kind),parameter :: n3d=8
-    integer(i_kind),parameter :: n3d=14
+    integer(i_kind),parameter :: n3d=16
     character(len=4), parameter :: vars2d(n2d) = (/ 'z   ', 'ps  ' /)
-    ! character(len=4), parameter :: vars3d(n3d) = (/ 'u   ', 'v   ', &
-    !                                                 'vor ', 'div ', &
-    !                                                 'tv  ', 'q   ', &
-    !                                                 'cw  ', 'oz  ' /)
     character(len=4), parameter :: vars3d(n3d) = (/ 'u   ', 'v   ', &
                                                     'vor ', 'div ', &
                                                     'tv  ', 'q   ', &
                                                     'cw  ', 'oz  ', &
                                                     'ql  ', 'qi  ', &
                                                     'qr  ', 'qs  ', &
-                                                    'qg  ', 'cf  ' /)
+                                                    'qg  ', 'cf  ', &
+                                                    'cnvw', 'cnvc' /)
     real(r_kind),pointer,dimension(:,:):: ptr2d   =>NULL()
     real(r_kind),pointer,dimension(:,:,:):: ptr3d =>NULL()
+    integer(i_kind) :: icw, iql, iqi, iqr, iqs, iqg, icf, icnvw, icnvc
 
     regional=.false.
     inner_vars=1
-    num_fields=min(14*grd_a%nsig+2,npe)
+    num_fields=min(16*grd_a%nsig+2,npe)
+
+    call gsi_metguess_get ('var::cw', icw, istatus )
+    call gsi_metguess_get ('var::ql', iql, istatus )
+    call gsi_metguess_get ('var::qi', iqi, istatus )
+    call gsi_metguess_get ('var::qr', iqr, istatus )
+    call gsi_metguess_get ('var::qs', iqs, istatus )
+    call gsi_metguess_get ('var::qg', iqg, istatus )
+    call gsi_metguess_get ('var::cf', icf, istatus )
+    call gsi_metguess_get ('var::cnvw', icnvw, istatus )
+    call gsi_metguess_get ('var::cnvc', icnvc, istatus )
+
 !  Create temporary communication information fore read routines
     call general_sub2grid_create_info(grd_t,inner_vars,grd_a%nlat,grd_a%nlon, &
           grd_a%nsig,num_fields,regional)
@@ -219,40 +228,43 @@ contains
 !      Set values to actual MetGuess fields
        call set_guess_
 
-       if (it==ntguessig) then
+       if (it == ntguessig .and. allsky_verbose) then
           if (mype==0) write(6,*)'Print guess field ... after set_guess'
           call prt_guess('guess')
        endif
-       if (fv3_full_hydro) then
-          do k=1, nsig
-             do j=1, lon2
-                do i=1, lat2
-                   ! set lower bound to hydrometeors
-                   if (associated(ges_ql_it)) ges_ql_it(i,j,k) = max(qcmin,ges_ql_it(i,j,k))
-                   if (associated(ges_qi_it)) ges_qi_it(i,j,k) = max(qcmin,ges_qi_it(i,j,k))
-                   if (associated(ges_qr_it)) ges_qr_it(i,j,k) = max(qcmin,ges_qr_it(i,j,k))
-                   if (associated(ges_qs_it)) ges_qs_it(i,j,k) = max(qcmin,ges_qs_it(i,j,k))
-                   if (associated(ges_qg_it)) ges_qg_it(i,j,k) = max(qcmin,ges_qg_it(i,j,k))
-                   if (associated(ges_cf_it)) ges_cf_it(i,j,k) = min(max(zero,ges_cf_it(i,j,k)),one)
-                enddo
-             enddo
-          enddo
-       else
-          l_cld_derived = associated(ges_cwmr_it).and.&
-                          associated(ges_q_it)   .and.&
-                          associated(ges_ql_it)  .and.&
-                          associated(ges_qi_it)  .and.& 
-                          associated(ges_tv_it)
-!         call set_cloud_lower_bound(ges_cwmr_it)
-          if (mype==0) write(6,*)'READ_GFS_NETCDF: l_cld_derived = ', l_cld_derived
+      
+       l_cld_derived = associated(ges_cwmr_it).and.&
+                       associated(ges_q_it)   .and.&
+                       associated(ges_ql_it)  .and.&
+                       associated(ges_qi_it)  .and.&
+                       associated(ges_tv_it)
+       if (mype==0) write(6,*)'READ_GFS_NETCDF: l_cld_derived = ', l_cld_derived
 
-          if (l_cld_derived) then
-             call cloud_calc_gfs(ges_ql_it,ges_qi_it,ges_cwmr_it,ges_q_it,ges_tv_it,.true.)
+       if (l_cld_derived) then
+          call cloud_calc_gfs(ges_ql_it,ges_qi_it,ges_cwmr_it,ges_q_it,ges_tv_it,clip_hydrometeor)
+       else
+          if (cnvw_option .and. associated(ges_cnvw_it)) then
+             call cloud_calc_gfs2(ges_ql_it,ges_cnvw_it,clip_hydrometeor)
+          else
+             if (associated(ges_ql_it) .and. clip_hydrometeor) call set_cloud_bound(ges_ql_it,.false.)
           end if
+          if (associated(ges_qi_it) .and. clip_hydrometeor) call set_cloud_bound(ges_qi_it,.false.)
+          if (associated(ges_qr_it) .and. clip_hydrometeor) call set_cloud_bound(ges_qr_it,.false.)
+          if (associated(ges_qs_it) .and. clip_hydrometeor) call set_cloud_bound(ges_qs_it,.false.)
+          if (associated(ges_qg_it) .and. clip_hydrometeor) call set_cloud_bound(ges_qg_it,.false.)
+          if (associated(ges_cnvw_it) .and. clip_hydrometeor) call set_cloud_bound(ges_cnvw_it,.false.)
+          if (associated(ges_cf_it)) call set_cloud_bound(ges_cf_it,.true.)
+          if (associated(ges_cnvc_it)) call set_cloud_bound(ges_cnvc_it,.true.)
        end if
        if (it==ntguessig) then
           if (mype==0) write(6,*)'Print guess field ... after set lower bound for hydrometers'
           call prt_guess('guess')
+       endif
+
+       if (it == ntguessig .and. allsky_verbose) then
+          if (mype==0) write(6,*)'Print guess field ... after reset cloud bound'
+          call prt_guess('guess')
+          call write_guess(it,n2d,n3d,grd_t,gsi_metguess_bundle(it),vars2d,vars3d,'guess_a')
        endif
 
     end do
@@ -308,40 +320,68 @@ contains
        call gsi_bundlegetpointer (gsi_metguess_bundle(it),'oz',ges_oz_it ,istatus)
        if(istatus==0) ges_oz_it = ptr3d
     endif
-    call gsi_bundlegetpointer (atm_bundle,'cw',ptr3d,istatus)
-    if (istatus==0) then
-       call gsi_bundlegetpointer (gsi_metguess_bundle(it),'cw',ges_cwmr_it,istatus)
-       if(istatus==0) ges_cwmr_it = ptr3d
+    if (icw > 0) then
+       call gsi_bundlegetpointer (atm_bundle,'cw',ptr3d,istatus)
+       if (istatus==0) then
+          call gsi_bundlegetpointer (gsi_metguess_bundle(it),'cw',ges_cwmr_it,istatus)
+          if(istatus==0) ges_cwmr_it = ptr3d
+       endif
+    end if
+    if(iql > 0)then
+       call gsi_bundlegetpointer (atm_bundle,'ql',ptr3d,istatus)
+       if (istatus==0) then
+          call gsi_bundlegetpointer (gsi_metguess_bundle(it),'ql',ges_ql_it,istatus)
+          if(istatus==0) ges_ql_it = ptr3d
+       endif
     endif
-    call gsi_bundlegetpointer (atm_bundle,'ql',ptr3d,istatus)
-    if (istatus==0) then
-       call gsi_bundlegetpointer (gsi_metguess_bundle(it),'ql',ges_ql_it,istatus)
-       if(istatus==0) ges_ql_it = ptr3d
+    if(iqi > 0)then
+       call gsi_bundlegetpointer (atm_bundle,'qi',ptr3d,istatus)
+       if (istatus==0) then
+          call gsi_bundlegetpointer (gsi_metguess_bundle(it),'qi',ges_qi_it,istatus)
+          if(istatus==0) ges_qi_it = ptr3d
+       endif
     endif
-    call gsi_bundlegetpointer (atm_bundle,'qi',ptr3d,istatus)
-    if (istatus==0) then
-       call gsi_bundlegetpointer (gsi_metguess_bundle(it),'qi',ges_qi_it,istatus)
-       if(istatus==0) ges_qi_it = ptr3d
+    if(iqr > 0)then
+       call gsi_bundlegetpointer (atm_bundle,'qr',ptr3d,istatus)
+       if (istatus==0) then
+          call gsi_bundlegetpointer (gsi_metguess_bundle(it),'qr',ges_qr_it,istatus)
+          if(istatus==0) ges_qr_it = ptr3d
+       endif
     endif
-    call gsi_bundlegetpointer (atm_bundle,'qr',ptr3d,istatus)
-    if (istatus==0) then
-       call gsi_bundlegetpointer (gsi_metguess_bundle(it),'qr',ges_qr_it,istatus)
-       if(istatus==0) ges_qr_it = ptr3d
+    if(iqs > 0)then
+       call gsi_bundlegetpointer (atm_bundle,'qs',ptr3d,istatus)
+       if (istatus==0) then
+          call gsi_bundlegetpointer (gsi_metguess_bundle(it),'qs',ges_qs_it,istatus)
+          if(istatus==0) ges_qs_it = ptr3d
+       endif
     endif
-    call gsi_bundlegetpointer (atm_bundle,'qs',ptr3d,istatus)
-    if (istatus==0) then
-       call gsi_bundlegetpointer (gsi_metguess_bundle(it),'qs',ges_qs_it,istatus)
-       if(istatus==0) ges_qs_it = ptr3d
+    if(iqg > 0)then
+       call gsi_bundlegetpointer (atm_bundle,'qg',ptr3d,istatus)
+       if (istatus==0) then
+          call gsi_bundlegetpointer (gsi_metguess_bundle(it),'qg',ges_qg_it,istatus)
+          if(istatus==0) ges_qg_it = ptr3d
+       endif
     endif
-    call gsi_bundlegetpointer (atm_bundle,'qg',ptr3d,istatus)
-    if (istatus==0) then
-       call gsi_bundlegetpointer (gsi_metguess_bundle(it),'qg',ges_qg_it,istatus)
-       if(istatus==0) ges_qg_it = ptr3d
+    if(icf > 0)then
+       call gsi_bundlegetpointer (atm_bundle,'cf',ptr3d,istatus)
+       if (istatus==0) then
+          call gsi_bundlegetpointer (gsi_metguess_bundle(it),'cf',ges_cf_it,istatus)
+          if(istatus==0) ges_cf_it = ptr3d
+       endif
     endif
-    call gsi_bundlegetpointer (atm_bundle,'cf',ptr3d,istatus)
-    if (istatus==0) then
-       call gsi_bundlegetpointer (gsi_metguess_bundle(it),'cf',ges_cf_it,istatus)
-       if(istatus==0) ges_cf_it = ptr3d
+    if(cnvw_option .and. icnvw > 0) then
+       call gsi_bundlegetpointer (atm_bundle,'cnvw',ptr3d,istatus)
+       if (istatus==0) then
+          call gsi_bundlegetpointer (gsi_metguess_bundle(it),'cnvw',ges_cnvw_it,istatus)
+          if(istatus==0) ges_cnvw_it = ptr3d
+       end if
+    endif
+    if(cnvw_option .and. icnvc > 0) then
+       call gsi_bundlegetpointer (atm_bundle,'cnvc',ptr3d,istatus)
+       if (istatus==0) then
+          call gsi_bundlegetpointer (gsi_metguess_bundle(it),'cnvc',ges_cnvc_it,istatus)
+          if(istatus==0) ges_cnvc_it = ptr3d
+       end if
     endif
   end subroutine set_guess_
 
@@ -1649,7 +1689,7 @@ contains
 ! !USES:
     use kinds, only: r_kind,i_kind
 
-    use constants, only: r1000,fv,one,zero,qcmin,r0_05,t0c
+    use constants, only: r1000,fv,one,zero,qcmin,r0_05,t0c,qmin
 
     use mpimod, only: mpi_rtype
     use mpimod, only: mpi_comm_world
@@ -1681,6 +1721,8 @@ contains
          read_attribute, write_attribute,get_dim, create_dataset, write_vardata, read_vardata,&
          get_idate_from_time_units,quantize_data,get_time_units_from_idate,has_attr,has_var
     use ncepnems_io, only: error_msg
+    use control_vectors, only: cvars3d
+    use mpeu_util, only: getindex
 
     implicit none
 
@@ -1713,13 +1755,16 @@ contains
     real(r_kind),pointer,dimension(:,:) :: sub_ps
     real(r_kind),pointer,dimension(:,:,:) :: sub_u,sub_v,sub_tv
     real(r_kind),pointer,dimension(:,:,:) :: sub_q,sub_oz,sub_cwmr
+    real(r_kind),pointer,dimension(:,:,:) :: sub_ql,sub_qi,sub_qr
+    real(r_kind),pointer,dimension(:,:,:) :: sub_qs,sub_qg
 
     real(r_kind),dimension(grd%lat2,grd%lon2,grd%nsig) :: sub_dzb,sub_dza
 
     real(r_kind),dimension(grd%lat1*grd%lon1)     :: psm
     real(r_kind),dimension(grd%lat1*grd%lon1,grd%nsig):: tvsm, usm, vsm
     real(r_kind),dimension(grd%lat1*grd%lon1,grd%nsig):: qsm, ozsm
-    real(r_kind),dimension(grd%lat1*grd%lon1,grd%nsig):: cwsm, dzsm
+    real(r_kind),dimension(grd%lat1*grd%lon1,grd%nsig):: dzsm
+    real(r_kind),allocatable,dimension(:,:) :: cwsm, qlsm, qism, qrsm, qssm, qgsm
     real(r_kind),dimension(max(grd%iglobal,grd%itotsub))     :: work1,work2
     real(r_kind),dimension(grd%nlon,grd%nlat-2):: grid
     real(r_kind),allocatable,dimension(:) :: rlats,rlons,clons,slons
@@ -1735,12 +1780,20 @@ contains
     logical diff_res,eqspace
     logical,dimension(1) :: vector
     type(egrid2agrid_parm) :: p_low,p_high
+    logical :: cw_cv,ql_cv,qi_cv,qr_cv,qs_cv,qg_cv
 
 !*************************************************************************
 !   Initialize local variables
     mm1=mype+1
     nlatm2=grd%nlat-2
     diff_res=.false.
+
+    cw_cv=getindex(cvars3d,'cw') > 0
+    ql_cv=getindex(cvars3d,'ql') > 0
+    qi_cv=getindex(cvars3d,'qi') > 0
+    qr_cv=getindex(cvars3d,'qr') > 0
+    qs_cv=getindex(cvars3d,'qs') > 0
+    qg_cv=getindex(cvars3d,'qg') > 0
 
     istatus=0
     call gsi_bundlegetpointer(gfs_bundle,'ps', sub_ps,  iret); istatus=istatus+iret
@@ -1749,7 +1802,18 @@ contains
     call gsi_bundlegetpointer(gfs_bundle,'tv', sub_tv,  iret); istatus=istatus+iret
     call gsi_bundlegetpointer(gfs_bundle,'q',  sub_q,   iret); istatus=istatus+iret
     call gsi_bundlegetpointer(gfs_bundle,'oz', sub_oz,  iret); istatus=istatus+iret
+    if (cw_cv) &
     call gsi_bundlegetpointer(gfs_bundle,'cw', sub_cwmr,iret); istatus=istatus+iret
+    if (cw_cv .or. ql_cv) &
+    call gsi_bundlegetpointer(gfs_bundle,'ql', sub_ql,  iret); istatus=istatus+iret
+    if (cw_cv .or. qi_cv) &
+    call gsi_bundlegetpointer(gfs_bundle,'qi', sub_qi,  iret); istatus=istatus+iret
+    if (qr_cv) &
+    call gsi_bundlegetpointer(gfs_bundle,'qr', sub_qr,  iret); istatus=istatus+iret
+    if (qs_cv) &
+    call gsi_bundlegetpointer(gfs_bundle,'qs', sub_qs,  iret); istatus=istatus+iret
+    if (qg_cv) &
+    call gsi_bundlegetpointer(gfs_bundle,'qg', sub_qg,  iret); istatus=istatus+iret
     if ( istatus /= 0 ) then
        if ( mype == 0 ) then
          write(6,*) 'write_atm_: ERROR'
@@ -1871,7 +1935,30 @@ contains
     call strip(sub_tv  ,tvsm  ,grd%nsig)
     call strip(sub_q   ,qsm   ,grd%nsig)
     call strip(sub_oz  ,ozsm  ,grd%nsig)
-    call strip(sub_cwmr,cwsm  ,grd%nsig)
+    if (cw_cv) then
+       allocate(cwsm(grd%lat1*grd%lon1,grd%nsig))
+       call strip(sub_cwmr,cwsm  ,grd%nsig)
+    endif
+    if (ql_cv) then
+       allocate(qlsm(grd%lat1*grd%lon1,grd%nsig))
+       call strip(sub_ql  ,qlsm  ,grd%nsig)
+    endif
+    if (qi_cv) then
+       allocate(qism(grd%lat1*grd%lon1,grd%nsig))
+       call strip(sub_qi  ,qism  ,grd%nsig)
+    endif
+    if (qr_cv) then
+       allocate(qrsm(grd%lat1*grd%lon1,grd%nsig))
+       call strip(sub_qr  ,qrsm  ,grd%nsig)
+    endif
+    if (qs_cv) then
+       allocate(qssm(grd%lat1*grd%lon1,grd%nsig))
+       call strip(sub_qs  ,qssm  ,grd%nsig)
+    endif
+    if (qg_cv) then
+       allocate(qgsm(grd%lat1*grd%lon1,grd%nsig))
+       call strip(sub_qg  ,qgsm  ,grd%nsig)
+    endif
     call strip(sub_u   ,usm   ,grd%nsig)
     call strip(sub_v   ,vsm   ,grd%nsig)
     call strip(sub_dza ,dzsm  ,grd%nsig)
@@ -2102,7 +2189,7 @@ contains
              call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
              do j=1,latb
                 do i=1,lonb
-                   grid_b(i,j)=grid_b(i,j)+grid_c(latb-j+2,i,1)
+                   grid_b(i,j)=max(grid_b(i,j)+grid_c(latb-j+2,i,1),qmin)
                 end do
              end do
              values_3d(:,:,kr) = grid_b
@@ -2180,54 +2267,118 @@ contains
           call read_vardata(atmges, 'icmr', vg3d, errcode=iret)
           if (iret /= 0) call error_msg(trim(my_name),trim(filename),'icmr','read',istop,iret)
        endif
-
-       do k=1,grd%nsig
-          kr = grd%nsig-k+1
-          call mpi_gatherv(cwsm(1,k),grd%ijn(mm1),mpi_rtype,&
-               work1,grd%ijn,grd%displs_g,mpi_rtype,&
-               mype_out,mpi_comm_world,ierror)
-          call mpi_gatherv(tvsm(1,k),grd%ijn(mm1),mpi_rtype,&
-               work2,grd%ijn,grd%displs_g,mpi_rtype,&
-               mype_out,mpi_comm_world,ierror)
-          if (mype == mype_out) then
-             grid_b = ug3d(:,:,kr)
-             grid_b2=vg3d(:,:,kr)
-             grid_b = grid_b + grid_b2
-             vector(1)=.false.
-             call fill2_ns(grid_b,grid_c(:,:,1),latb+2,lonb)
-             call g_egrid2agrid(p_low,grid_c,grid3,1,1,vector)
-             do kk=1,grd%iglobal
-                i=grd%ltosi(kk)
-                j=grd%ltosj(kk)
-                grid3(i,j,1)=work1(kk)-max(grid3(i,j,1),qcmin)
-                work2(kk) = -r0_05*(work2(kk) - t0c)
-                work2(kk) = max(zero,work2(kk))
-                work2(kk) = min(one,work2(kk))
-                grid3b(i,j,1)=grid3(i,j,1)
-                grid3(i,j,1)=grid3b(i,j,1)*(one - work2(kk))
-             end do
-             call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
-             grid_b = grid_b - grid_b2
-             do j=1,latb
-                do i=1,lonb
-                   grid_b(i,j)=grid_b(i,j)+grid_c(latb-j+2,i,1)
+       if (cw_cv) then
+          do k=1,grd%nsig
+             kr = grd%nsig-k+1
+             call mpi_gatherv(cwsm(1,k),grd%ijn(mm1),mpi_rtype,&
+                  work1,grd%ijn,grd%displs_g,mpi_rtype,&
+                  mype_out,mpi_comm_world,ierror)
+             call mpi_gatherv(tvsm(1,k),grd%ijn(mm1),mpi_rtype,&
+                  work2,grd%ijn,grd%displs_g,mpi_rtype,&
+                  mype_out,mpi_comm_world,ierror)
+             if (mype == mype_out) then
+                grid_b = ug3d(:,:,kr)
+                grid_b2=vg3d(:,:,kr)
+                grid_b = grid_b + grid_b2
+                vector(1)=.false.
+                call fill2_ns(grid_b,grid_c(:,:,1),latb+2,lonb)
+                call g_egrid2agrid(p_low,grid_c,grid3,1,1,vector)
+                do kk=1,grd%iglobal
+                   i=grd%ltosi(kk)
+                   j=grd%ltosj(kk)
+                   grid3(i,j,1)=work1(kk)-max(grid3(i,j,1),qcmin)
+                   work2(kk) = -r0_05*(work2(kk) - t0c)
+                   work2(kk) = max(zero,work2(kk))
+                   work2(kk) = min(one,work2(kk))
+                   grid3b(i,j,1)=grid3(i,j,1)
+                   grid3(i,j,1)=grid3b(i,j,1)*(one - work2(kk))
                 end do
-             end do
-             ug3d(:,:,kr) = grid_b
-             do kk=1,grd%iglobal
-                i=grd%ltosi(kk)
-                j=grd%ltosj(kk)
-                grid3(i,j,1)=grid3b(i,j,1)*work2(kk)
-             end do
-             call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
-             do j=1,latb
-                do i=1,lonb
-                   grid_b2(i,j)=grid_b2(i,j)+grid_c(latb-j+2,i,1)
+                call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
+                grid_b = grid_b - grid_b2
+                do j=1,latb
+                   do i=1,lonb
+                      grid_b(i,j)=max(grid_b(i,j)+grid_c(latb-j+2,i,1),qcmin)
+                   end do
                 end do
+                ug3d(:,:,kr) = grid_b
+                do kk=1,grd%iglobal
+                   i=grd%ltosi(kk)
+                   j=grd%ltosj(kk)
+                   grid3(i,j,1)=grid3b(i,j,1)*work2(kk)
+                end do
+                call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
+                do j=1,latb
+                   do i=1,lonb
+                      grid_b2(i,j)=max(grid_b2(i,j)+grid_c(latb-j+2,i,1),qcmin)
+                   end do
+                end do
+                vg3d(:,:,kr) = grid_b2
+             endif !mype == mype_out
+          end do
+       else
+          if (ql_cv) then
+             do k=1,grd%nsig
+                kr = grd%nsig-k+1
+                call mpi_gatherv(qlsm(1,k),grd%ijn(mm1),mpi_rtype,&
+                     work1,grd%ijn,grd%displs_g,mpi_rtype,&
+                     mype_out,mpi_comm_world,ierror)
+                if (mype == mype_out) then
+                   if(diff_res)then
+                      grid_b=ug3d(:,:,kr)
+                      vector(1)=.false.
+                      call fill2_ns(grid_b,grid_c(:,:,1),latb+2,lonb)
+                      call g_egrid2agrid(p_low,grid_c,grid3,1,1,vector)
+                      do kk=1,grd%iglobal
+                         i=grd%ltosi(kk)
+                         j=grd%ltosj(kk)
+                         grid3(i,j,1)=work1(kk)-grid3(i,j,1)
+                      end do
+                      call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
+                      do j=1,latb
+                         do i=1,lonb
+                            grid_b(i,j)=max(grid_b(i,j)+grid_c(latb-j+2,i,1),qcmin)
+                         end do
+                      end do
+                      ug3d(:,:,kr) = grid_b
+                   else
+                      call load_grid(work1,grid)
+                      ug3d(:,:,kr) = grid
+                   end if
+                endif
              end do
-             vg3d(:,:,kr) = grid_b2
-          endif !mype == mype_out
-       end do
+          end if
+          if (qi_cv) then
+             do k=1,grd%nsig
+                kr = grd%nsig-k+1
+                call mpi_gatherv(qism(1,k),grd%ijn(mm1),mpi_rtype,&
+                     work1,grd%ijn,grd%displs_g,mpi_rtype,&
+                     mype_out,mpi_comm_world,ierror)
+                if (mype == mype_out) then
+                   if(diff_res)then
+                      grid_b=vg3d(:,:,kr)
+                      vector(1)=.false.
+                      call fill2_ns(grid_b,grid_c(:,:,1),latb+2,lonb)
+                      call g_egrid2agrid(p_low,grid_c,grid3,1,1,vector)
+                      do kk=1,grd%iglobal
+                         i=grd%ltosi(kk)
+                         j=grd%ltosj(kk)
+                         grid3(i,j,1)=work1(kk)-grid3(i,j,1)
+                      end do
+                      call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
+                      do j=1,latb
+                         do i=1,lonb
+                            grid_b(i,j)=max(grid_b(i,j)+grid_c(latb-j+2,i,1),qcmin)
+                         end do
+                      end do
+                      vg3d(:,:,kr) = grid_b
+                   else
+                      call load_grid(work1,grid)
+                      vg3d(:,:,kr) = grid
+                   end if
+                endif
+             end do
+          end if
+       end if
        if (mype==mype_out) then
           if (has_attr(atmges, 'nbits', 'clwmr')) then
             call read_attribute(atmges, 'nbits', nbits, 'clwmr')
@@ -2249,6 +2400,202 @@ contains
           if (iret /= 0) call error_msg(trim(my_name),trim(filename),'icmr','write',istop,iret)
           deallocate(ug3d, vg3d)
        endif
+
+       if (mype==mype_out) then
+          if (has_var(atmges,'rwmr')) then
+             call read_vardata(atmges, 'rwmr', values_3d, errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'rwmr','read',istop,iret)
+          end if
+       endif
+       if (qr_cv) then
+          do k=1,grd%nsig
+             kr = grd%nsig-k+1
+             call mpi_gatherv(qrsm(1,k),grd%ijn(mm1),mpi_rtype,&
+                  work1,grd%ijn,grd%displs_g,mpi_rtype,&
+                  mype_out,mpi_comm_world,ierror)
+             if (mype == mype_out) then
+                if(diff_res)then
+                   grid_b=values_3d(:,:,kr)
+                   vector(1)=.false.
+                   call fill2_ns(grid_b,grid_c(:,:,1),latb+2,lonb)
+                   call g_egrid2agrid(p_low,grid_c,grid3,1,1,vector)
+                   do kk=1,grd%iglobal
+                      i=grd%ltosi(kk)
+                      j=grd%ltosj(kk)
+                      grid3(i,j,1)=work1(kk)-grid3(i,j,1)
+                   end do
+                   call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
+                   do j=1,latb
+                      do i=1,lonb
+                         grid_b(i,j)=max(grid_b(i,j)+grid_c(latb-j+2,i,1),qcmin)
+                      end do
+                   end do
+                   values_3d(:,:,kr) = grid_b
+                else
+                   call load_grid(work1,grid)
+                   values_3d(:,:,kr) = grid
+                end if
+             endif
+          end do
+       end if
+       if (mype==mype_out) then
+          if (has_var(atmges,'rwmr')) then
+             if (has_attr(atmges, 'nbits', 'rwmr')) then
+               call read_attribute(atmges, 'nbits', nbits, 'rwmr')
+               values_3d_tmp = values_3d
+               call quantize_data(values_3d_tmp, values_3d, nbits, compress_err)
+               call write_attribute(atmanl,&
+               'max_abs_compression_error',compress_err,'rwmr')
+             endif
+             call write_vardata(atmanl,'rwmr',values_3d,errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'rwmr','write',istop,iret)
+          end if
+       endif
+
+       if (mype==mype_out) then
+          if (has_var(atmges,'snmr')) then
+             call read_vardata(atmges, 'snmr', values_3d, errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'snmr','read',istop,iret)
+          end if
+       endif
+       if (qs_cv) then
+          do k=1,grd%nsig
+             kr = grd%nsig-k+1
+             call mpi_gatherv(qssm(1,k),grd%ijn(mm1),mpi_rtype,&
+                  work1,grd%ijn,grd%displs_g,mpi_rtype,&
+                  mype_out,mpi_comm_world,ierror)
+             if (mype == mype_out) then
+                if(diff_res)then
+                   grid_b=values_3d(:,:,kr)
+                   vector(1)=.false.
+                   call fill2_ns(grid_b,grid_c(:,:,1),latb+2,lonb)
+                   call g_egrid2agrid(p_low,grid_c,grid3,1,1,vector)
+                   do kk=1,grd%iglobal
+                      i=grd%ltosi(kk)
+                      j=grd%ltosj(kk)
+                      grid3(i,j,1)=work1(kk)-grid3(i,j,1)
+                   end do
+                   call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
+                   do j=1,latb
+                      do i=1,lonb
+                         grid_b(i,j)=max(grid_b(i,j)+grid_c(latb-j+2,i,1),qcmin)
+                      end do
+                   end do
+                   values_3d(:,:,kr) = grid_b
+                else
+                   call load_grid(work1,grid)
+                   values_3d(:,:,kr) = grid
+                end if
+             endif
+          end do
+       end if
+       if (mype==mype_out) then
+          if (has_var(atmges,'snmr')) then
+             if (has_attr(atmges, 'nbits', 'snmr')) then
+               call read_attribute(atmges, 'nbits', nbits, 'snmr')
+               values_3d_tmp = values_3d
+               call quantize_data(values_3d_tmp, values_3d, nbits, compress_err)
+               call write_attribute(atmanl,&
+               'max_abs_compression_error',compress_err,'snmr')
+             endif
+             call write_vardata(atmanl,'snmr',values_3d,errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'snmr','write',istop,iret)
+          end if
+       endif
+
+       if (mype==mype_out) then
+          if (has_var(atmges,'grle')) then
+             call read_vardata(atmges, 'grle', values_3d, errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'grle','read',istop,iret)
+          end if
+       endif
+       if (qg_cv) then
+          do k=1,grd%nsig
+             kr = grd%nsig-k+1
+             call mpi_gatherv(qgsm(1,k),grd%ijn(mm1),mpi_rtype,&
+                  work1,grd%ijn,grd%displs_g,mpi_rtype,&
+                  mype_out,mpi_comm_world,ierror)
+             if (mype == mype_out) then
+                if(diff_res)then
+                   grid_b=values_3d(:,:,kr)
+                   vector(1)=.false.
+                   call fill2_ns(grid_b,grid_c(:,:,1),latb+2,lonb)
+                   call g_egrid2agrid(p_low,grid_c,grid3,1,1,vector)
+                   do kk=1,grd%iglobal
+                      i=grd%ltosi(kk)
+                      j=grd%ltosj(kk)
+                      grid3(i,j,1)=work1(kk)-grid3(i,j,1)
+                   end do
+                   call g_egrid2agrid(p_high,grid3,grid_c,1,1,vector)
+                   do j=1,latb
+                      do i=1,lonb
+                         grid_b(i,j)=max(grid_b(i,j)+grid_c(latb-j+2,i,1),qcmin)
+                      end do
+                   end do
+                   values_3d(:,:,kr) = grid_b
+                else
+                   call load_grid(work1,grid)
+                   values_3d(:,:,kr) = grid
+                end if
+             endif
+          end do
+       end if
+       if (mype==mype_out) then
+          if (has_var(atmges,'grle')) then
+             if (has_attr(atmges, 'nbits', 'grle')) then
+               call read_attribute(atmges, 'nbits', nbits, 'grle')
+               values_3d_tmp = values_3d
+               call quantize_data(values_3d_tmp, values_3d, nbits, compress_err)
+               call write_attribute(atmanl,&
+               'max_abs_compression_error',compress_err,'grle')
+             endif
+             call write_vardata(atmanl,'grle',values_3d,errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'grle','write',istop,iret)
+          end if
+       endif
+
+       if (mype==mype_out) then
+          if (has_var(atmges,'cld_amt')) then
+             call read_vardata(atmges, 'cld_amt', values_3d, errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'cld_amt','read',istop,iret)
+             if (has_attr(atmges, 'nbits', 'cld_amt')) then
+               call read_attribute(atmges, 'nbits', nbits, 'cld_amt')
+               values_3d_tmp = values_3d
+               call quantize_data(values_3d_tmp, values_3d, nbits, compress_err)
+               call write_attribute(atmanl,&
+               'max_abs_compression_error',compress_err,'cld_amt')
+             endif
+             call write_vardata(atmanl,'cld_amt',values_3d,errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'cld_amt','write',istop,iret)
+          end if
+          if (has_var(atmges,'cnvw')) then 
+             call read_vardata(atmges, 'cnvw', values_3d, errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'cnvw','read',istop,iret)
+             if (has_attr(atmges, 'nbits', 'cnvw')) then 
+               call read_attribute(atmges, 'nbits', nbits, 'cnvw')
+               values_3d_tmp = values_3d
+               call quantize_data(values_3d_tmp, values_3d, nbits, compress_err)
+               call write_attribute(atmanl,&
+               'max_abs_compression_error',compress_err,'cnvw')
+             endif
+             call write_vardata(atmanl,'cnvw',values_3d,errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'cnvw','write',istop,iret)
+          end if
+          if (has_var(atmges,'cnvc')) then 
+             call read_vardata(atmges, 'cnvc', values_3d, errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'cnvc','read',istop,iret)
+             if (has_attr(atmges, 'nbits', 'cnvc')) then 
+               call read_attribute(atmges, 'nbits', nbits, 'cnvc')
+               values_3d_tmp = values_3d
+               call quantize_data(values_3d_tmp, values_3d, nbits, compress_err)
+               call write_attribute(atmanl,&
+               'max_abs_compression_error',compress_err,'cnvc')
+             endif
+             call write_vardata(atmanl,'cnvc',values_3d,errcode=iret)
+             if (iret /= 0) call error_msg(trim(my_name),trim(filename),'cnvc','write',istop,iret)
+          end if
+       endif
+
     endif !ntracer
 
 ! Variables needed by the Unified Post Processor (dzdt, delz, delp)
@@ -3188,6 +3535,183 @@ contains
 
   return
   end subroutine tran_gfsncsfc
+
+subroutine write_guess(ibin,n2d,n3d,grd,bundle,vars2d,vars3d,fname)
+!$$$  subprogram documentation block
+!                .      .    .                                       .
+! subprogram:    write_guess  write first guess for diagnostics
+!   prgmmr: mtong           org: np22                date: 2020-12-21
+!
+! abstract: write ensemble spread (previously interpolated to analysis grid)
+!             for diagnostic purposes.
+!
+!
+!   input argument list:
+!     bundle -  atms bundle
+!
+!   output argument list:
+!
+! attributes:
+!   language: f90
+!   machine:  ibm RS/6000 SP
+!
+!$$$ end documentation block
+  use mpimod, only: mype
+  use kinds, only: r_kind,i_kind,r_single
+  use guess_grids, only: get_ref_gesprs
+  use gsi_bundlemod, only: gsi_grid
+  use gsi_bundlemod, only: gsi_bundle
+  use gsi_bundlemod, only: gsi_bundlegetpointer
+  use constants, only: zero
+  use general_sub2grid_mod, only: sub2grid_info
+  use radinfo, only: allsky_verbose
+  implicit none
+
+  integer(i_kind), intent(in) :: ibin, n2d, n3d
+  type(sub2grid_info) :: grd
+  type(gsi_bundle):: bundle
+  character(len=4) :: vars3d(n3d), vars2d(n2d)
+  character(len=*) ::  fname
+! local variables
+  character(255):: grdfile,grdctl
+
+  real(r_kind),allocatable,dimension(:,:,:):: work8_3d
+  real(r_kind),allocatable,dimension(:,:):: work8_2d
+
+  real(r_single),allocatable,dimension(:,:,:):: work4_3d
+  real(r_single),allocatable,dimension(:,:):: work4_2d
+
+  real(r_kind),pointer,dimension(:,:,:):: ptr3d
+  real(r_kind),pointer,dimension(:,:):: ptr2d
+
+  integer(i_kind) iret,i,j,k,n,mem2d,mem3d,lu,istat
+  real(r_kind),dimension(grd%nsig+1) :: prs
+
+  real(r_single),allocatable,dimension(:) :: glon,glat
+  real(r_kind) :: dx, dy
+
+! Initial memory used by 2d and 3d grids
+  mem2d = 4*grd%nlat*grd%nlon
+  mem3d = 4*grd%nlat*grd%nlon*grd%nsig
+
+  allocate(work8_3d(grd%nlat,grd%nlon,grd%nsig))
+  allocate(work8_2d(grd%nlat,grd%nlon))
+  allocate(work4_3d(grd%nlon,grd%nlat,grd%nsig))
+  allocate(work4_2d(grd%nlon,grd%nlat))
+
+  if (mype==0) then
+    write(grdfile,'(a,i3.3)') trim(fname),ibin
+    call baopenwt(52,trim(grdfile)//'.grd',iret)
+    write(6,*)'WRITE_SPREAD_DUALRES:  open 52 to ',trim(grdfile),' with iret=',iret
+
+    if (allsky_verbose) then
+       allocate(glon(grd%nlon),glat(grd%nlat))
+       dx=360./grd%nlon
+       dy=180./(grd%nlat-1.)
+       do i=1,grd%nlon
+          glon(i)=(i-1)*dx
+       end do
+       do j=1,grd%nlat
+          glat(j)=-90.0+(j-1)*dy
+       end do
+       open(53,file=trim(grdfile)//'.dat',form='unformatted',access='stream')
+       write(53)real(grd%nlon,4),real(grd%nlat,4),real(grd%nsig,4), &
+                real(n3d,4), real(n2d,4)
+       write(53) glon
+       write(53) glat
+       deallocate(glon,glat)
+    endif
+
+  endif
+
+! Process 3d arrays
+  do n=1,n3d
+    call gsi_bundlegetpointer(bundle,vars3d(n),ptr3d,istat)
+    work8_3d=zero
+    do k=1,grd%nsig
+      call gather_stuff2(ptr3d(1,1,k),work8_3d(1,1,k),mype,0)
+    end do
+    if (mype==0) then
+      do k=1,grd%nsig
+        do j=1,grd%nlon
+          do i=1,grd%nlat
+            work4_3d(j,i,k) =work8_3d(i,j,k)
+          end do
+        end do
+      end do
+      if (trim(vars3d(n)) == 'cw')print *,'cw ', minval(work4_3d), maxval(work4_3d)
+      call wryte(52,mem3d,work4_3d)
+      write(6,*)'WRITE_GUESS FOR VARIABLE NUM ',n
+
+      if (allsky_verbose) then
+         write(53) work4_3d
+      endif
+    endif
+  end do
+
+! Process 2d array
+  do n=1,n2d
+    call gsi_bundlegetpointer(bundle,vars2d(n),ptr2d,istat)
+    work8_2d=zero
+    call gather_stuff2(ptr2d,work8_2d,mype,0)
+    if (mype==0) then
+       do j=1,grd%nlon
+          do i=1,grd%nlat
+             work4_2d(j,i)=work8_2d(i,j)
+          end do
+       end do
+       call wryte(52,mem2d,work4_2d)
+       write(6,*)'WRITE_SPREAD_DUALRES FOR 2D FIELD '
+
+       if (allsky_verbose) then
+          write(53) work4_2d
+       endif
+    endif
+  end do
+
+! Close byte-addressable binary file for grads
+  if (mype==0) then
+     call baclose(52,iret)
+     write(6,*)'WRITE_GUESS:  close 52 with iret=',iret
+
+     if (allsky_verbose) then
+        close(53)
+     endif
+  end if
+
+! Get reference pressure levels for grads purposes
+  call get_ref_gesprs(prs)
+
+! Write out a corresponding grads control file
+  if (mype==0) then
+     write(grdctl,'(a,i3.3,a)') trim(fname),ibin, '.ctl'
+     open(newunit=lu,file=trim(grdctl),form='formatted')
+     write(lu,'(2a)') 'DSET  ^', trim(grdfile)//'.grd'
+     write(lu,'(2a)') 'TITLE ', 'gsi guess'
+     write(lu,'(a,2x,e13.6)') 'UNDEF', 1.E+15 ! any other preference for this?
+     write(lu,'(a,2x,i4,2x,a,2x,f5.1,2x,f9.6)') 'XDEF',grd%nlon, 'LINEAR', 0.0, 360./grd%nlon
+     write(lu,'(a,2x,i4,2x,a,2x,f5.1,2x,f9.6)') 'YDEF',grd%nlat, 'LINEAR', -90.0, 180./(grd%nlat-1.)
+     write(lu,'(a,2x,i4,2x,a,100(1x,f10.5))')      'ZDEF',grd%nsig, 'LEVELS', prs(1:grd%nsig)
+     write(lu,'(a,2x,i4,2x,a)')   'TDEF', 1, 'LINEAR 12:00Z04JUL1776 6hr' ! any date suffices
+     write(lu,'(a,2x,i4)')        'VARS',n3d+n2d
+     do n=1,n3d
+        write(lu,'(a,1x,2(i4,1x),a)') trim(vars3d(n)),grd%nsig,0,trim(vars3d(n))
+     enddo
+     do n=1,n2d
+        write(lu,'(a,1x,2(i4,1x),a)') trim(vars2d(n)), 1,0,trim(vars2d(n))
+     enddo
+     write(lu,'(a)') 'ENDVARS'
+     close(lu)
+  endif
+
+! clean up
+  deallocate(work4_2d)
+  deallocate(work4_3d)
+  deallocate(work8_2d)
+  deallocate(work8_3d)
+
+  return
+end subroutine write_guess
 
 end module netcdfgfs_io
 

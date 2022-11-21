@@ -163,6 +163,7 @@ module gridmod
   public :: use_sp_eqspace,jcap_cut
   public :: wrf_mass_hybridcord
   public :: write_fv3_incr
+  public :: dlnpm_ratio
 
   interface strip
      module procedure strip_single_rank33_
@@ -325,7 +326,7 @@ module gridmod
 
   real(r_kind) rlon_min_ll,rlon_max_ll,rlat_min_ll,rlat_max_ll
   real(r_kind) rlon_min_dd,rlon_max_dd,rlat_min_dd,rlat_max_dd
-  real(r_kind) dt_ll,pdtop_ll,pt_ll
+  real(r_kind) dt_ll,pdtop_ll,pt_ll,dlnpm_ratio
 
   integer(i_kind) nlon_regional,nlat_regional
   real(r_kind) regional_fhr,regional_fmin
@@ -488,6 +489,8 @@ contains
     do k=1,size(nlayers)
        nlayers(k) = 1
     end do
+    ! =0.71 for nsig=91, =0.65 for nsig=64
+    dlnpm_ratio=-1.0
 
     jcap_cut=600
     jcap=62
@@ -623,6 +626,7 @@ contains
     do k=1,nsig
        msig = msig + nlayers(k)
     end do
+    if (mype==0) write(6,*) 'msig =', msig
 
 ! Initialize structure(s) for spectral <--> grid transforms
     if (.not.regional) then

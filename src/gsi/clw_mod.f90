@@ -517,7 +517,7 @@ subroutine ret_ssmis(tb,nchanl,tpwc,clw,ierr)
      dp(i) = cp(i) * dp0(i)
   end do
 
-!   get ta from tb
+! get ta from tb
   tax(1) = (tbx(1)*cp(2) + tbx(2)*dp(1))/(cp(1)*cp(2) - dp(1)*dp(2))
   tax(2) = (tbx(1)*dp(2) + tbx(2)*cp(1))/(cp(1)*cp(2) - dp(1)*dp(2))
   tax(3) = one/cp(3)*(tbx(3) + dp(3)*(.653_r_kind*tax(2)+ 96.6_r_kind))
@@ -1903,7 +1903,7 @@ subroutine epspp (t1,s,f,ep)
 
 end subroutine epspp
 
-subroutine ret_amsua(tb_obs,nchanl,tsavg5,zasat,clwp_amsua,ierrret,scat)  
+subroutine ret_amsua(tb_obs,nchanl,tsavg5,zasat,clwp_amsua,ierrret,atms,scat)
 !$$$  subprogram documentation block
 !                .      .    .                                       .
 ! subprogram:  ret_amsua 
@@ -1923,6 +1923,8 @@ subroutine ret_amsua(tb_obs,nchanl,tsavg5,zasat,clwp_amsua,ierrret,scat)
 !                            surface temperature
 !      2014-01-17  zhu     - add scattering index scat 
 !      2014-01-31  mkim - add ierrret return flag for cloud qc near seaice edge 
+!      2018-09-04  tong - bug fix: use channel 16 to calcuate scatter index for ATMS
+!
 !
 !  input argument list:
 !     tb_obs    - observed brightness temperatures
@@ -1952,6 +1954,7 @@ subroutine ret_amsua(tb_obs,nchanl,tsavg5,zasat,clwp_amsua,ierrret,scat)
   real(r_kind)                      ,intent(in   ) :: tsavg5,zasat
   real(r_kind)                      ,intent(  out) :: clwp_amsua
   integer(i_kind)                   ,intent(  out) :: ierrret 
+  logical,optional                  ,intent(in   ) :: atms
   real(r_kind),optional             ,intent(  out) :: scat
 
   real(r_kind),parameter:: r285=285.0_r_kind
@@ -1959,7 +1962,7 @@ subroutine ret_amsua(tb_obs,nchanl,tsavg5,zasat,clwp_amsua,ierrret,scat)
   real(r_kind),parameter:: r1000=1000.0_r_kind
 
 ! Declare local variables 
-  real(r_kind) :: d0, d1, d2, coszat
+  real(r_kind) :: d0, d1, d2, coszat, tb_89
 ! real(r_kind) :: c0, c1, c2
 
   
@@ -1979,8 +1982,13 @@ subroutine ret_amsua(tb_obs,nchanl,tsavg5,zasat,clwp_amsua,ierrret,scat)
   endif
 
   if (present(scat)) then
+      if (present(atms) .and. atms) then
+         tb_89=tb_obs(16)
+      else
+         tb_89=tb_obs(15)
+      endif
       scat=-113.2_r_kind+(2.41_r_kind-0.0049_r_kind*tb_obs(1))*tb_obs(1)  &
-           +0.454_r_kind*tb_obs(2)-tb_obs(15)
+           +0.454_r_kind*tb_obs(2)-tb_89
       scat=max(zero,scat)
   end if
 

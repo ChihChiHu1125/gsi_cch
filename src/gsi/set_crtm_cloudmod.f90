@@ -36,7 +36,8 @@ public Set_CRTM_Cloud
 
 CONTAINS
 
-  subroutine Set_CRTM_Cloud ( km, nac, cloud_name, icmask, nc, cloud_cont, cloud_efr,jcloud, dp, tp, pr, qh, cloud, lprecip) 
+  subroutine Set_CRTM_Cloud ( km, nac, cloud_name, icmask, nc, cloud_cont, cloud_efr,jcloud, &
+                              dp, tp, pr, qh, cloud, lprecip, ccw_cont) 
 
   implicit none
 
@@ -53,15 +54,22 @@ CONTAINS
   real(r_kind),     intent(in)    :: tp(km)            ! [km]   atmospheric temperature (K)
   real(r_kind),     intent(in)    :: pr(km)            ! [km]   atmospheric pressure  
   real(r_kind),     intent(in)    :: qh(km)            ! [km]   specific humidity
+  real(r_kind),intent(in),optional :: ccw_cont(km)     ! convective cloud content
 
   type(CRTM_Cloud_type), intent(inout) :: cloud(nc)    ! [nc]   CRTM Cloud object
 
-  call setCloud (cloud_name, icmask, cloud_cont, cloud_efr, jcloud, dp, tp, pr, qh, cloud, lprecip)
+  if (present(ccw_cont))then
+     call setCloud (cloud_name, icmask, cloud_cont, cloud_efr, jcloud, dp, tp, &
+                    pr, qh, cloud, lprecip, ccw_cont)
+  else
+     call setCloud (cloud_name, icmask, cloud_cont, cloud_efr, jcloud, dp, tp, pr, qh, cloud, lprecip)
+  end if
 
   end subroutine Set_CRTM_Cloud
 
  
-  subroutine setCloud (cloud_name, icmask, cloud_cont, cloud_efr,jcloud, dp, tp, pr, qh, cloud, lprecip)
+  subroutine setCloud (cloud_name, icmask, cloud_cont, cloud_efr,jcloud, dp, tp, pr, qh, &
+                       cloud, lprecip, ccw_cont)
 
   use gridmod, only: regional,wrf_mass_regional
   use wrf_params_mod, only: cold_start
@@ -79,6 +87,7 @@ CONTAINS
   real(r_kind),     intent(in)    :: tp(:)             ! [km]    atmospheric temperature (K)
   real(r_kind),     intent(in)    :: pr(:)             ! [km]    atmospheric pressure (??)
   real(r_kind),     intent(in)    :: qh(:)             ! [km]    atmospheric specific humidity (??)
+  real(r_kind),intent(in),optional :: ccw_cont(:)      ! [km]    convective cloud contents  (kg/m2) 
 
   type(CRTM_Cloud_type), intent(inout) :: cloud(:)     ! [nc]   CRTM Cloud object
 
@@ -176,6 +185,11 @@ CONTAINS
 
         if(icmask) then
            Cloud(n)%water_content(:) = cloud_cont(:,n)
+           if (trim(cloud_name(jcloud(n))) == 'ql' .and. &
+               present (ccw_cont)) then
+              Cloud(n)%water_content(:) = Cloud(n)%water_content(:) &
+                                        + ccw_cont(:) 
+           end if
         else
            Cloud(n)%water_content(:) = zero
         endif

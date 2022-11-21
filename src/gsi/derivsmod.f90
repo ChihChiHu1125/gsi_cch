@@ -119,6 +119,7 @@ subroutine init_anadv
 use mpeu_util, only: gettablesize
 use mpeu_util, only: gettable
 use mpeu_util, only: getindex
+use file_utility, only : get_lun
 implicit none
 
 character(len=*),parameter:: rcname='anavinfo'
@@ -135,6 +136,7 @@ logical matched
 
 if(drv_set_) return 
 
+luin=get_lun()
 open(newunit=luin,file=trim(rcname),form='formatted')
 
 ! Scan file for desired table first

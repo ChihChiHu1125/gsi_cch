@@ -122,7 +122,7 @@ module guess_grids
   public :: load_prsges
   public :: load_geop_hgt
   public :: load_gsdpbl_hgt
-  public :: add_rtm_layers
+  public :: add_rtm_layers, add_rtm_layers_gfdl
   public :: load_fact10
   public :: comp_fact10
   public :: guess_grids_print
@@ -1876,6 +1876,117 @@ contains
     prsitmp_ext(msig+1) = toa_prs_kpa
 
   end subroutine add_rtm_layers
+
+!-------------------------------------------------------------------------
+!    NOAA/NCEP, National Centers for Environmental Prediction GSI        !
+!-------------------------------------------------------------------------
+!BOP
+!
+! !IROUTINE: add_rtm_layers_gfdl --- Add pressure layers for RTM use (gfdl version)
+!
+! !INTERFACE:
+!
+  subroutine add_rtm_layers_gfdl(prsitmp,prsltmp,prsitmp_ext,prsltmp_ext,klevel,mype)
+
+! !USES:
+
+    use constants, only: half,ten,one_tenth
+    use gridmod, only: nsig,msig,nlayers,dlnpm_ratio
+    use crtm_module, only: toa_pressure
+
+    implicit none
+
+! !INPUT PARAMETERS:
+    integer(i_kind),dimension(msig)  ,intent(  out) :: klevel
+    
+    real(r_kind)   ,dimension(nsig+1),intent(in   ) :: prsitmp
+    real(r_kind)   ,dimension(nsig)  ,intent(in   ) :: prsltmp
+
+    real(r_kind)   ,dimension(msig+1),intent(  out) :: prsitmp_ext
+    real(r_kind)   ,dimension(msig)  ,intent(  out) :: prsltmp_ext
+    integer(i_kind), intent(in) :: mype 
+
+
+! !DESCRIPTION:  Add pressure layers for use in RTM (need to pre-determine
+!                msig and aa carefully for smooth change of layer mean
+!                pressure)
+!                pm = dp / dlnpe
+!                pm(kk)/dpm(kk)=dlnpm_ratio*(pm(kk-1)/dpm(kk-1))
+!                pe = prsitmp_ext
+!                dp = pe[1:msig+1] - pe[0:msig] 
+!                lnpe = np.log(pe)
+!                dlnpe = lnpe[1:msig+1] - lnpe[0:msig]
+!                pm = dp / dlnpe (pm - layer mean pressure)
+! !REVISION HISTORY:
+!   2021-01-11  tong
+!
+! !REMARKS:
+!   language: f90
+!   machine:  ibm rs/6000 sp; SGI Origin 2000; Compaq/HP
+!
+! !AUTHOR:
+!   treadon          org: w/nmc20      date: 2005-06-01
+!
+!EOP
+!-------------------------------------------------------------------------
+
+!   Declare local variables
+    integer(i_kind) k,kk,l,kg0
+    real(r_kind) dprs,toa_prs_kpa,layertop
+
+!   Convert toa_pressure to kPa
+!   ---------------------------
+    toa_prs_kpa = toa_pressure*one_tenth
+
+!   Check if model top pressure above rtm top pressure, where prsitmp
+!   is in kPa and toa_pressure is in hPa.
+    if (prsitmp(nsig) < toa_prs_kpa)then
+       write(6,*)'ADD_RTM_LAYERS:  model top pressure(hPa)=', &
+            ten*prsitmp(nsig),&
+            ' above rtm top pressure(hPa)=',toa_pressure
+       call stop2(35)
+    end if
+
+!   non-Linear in pressure sub-divsions, so that the change in layer 
+!   mean pressure and dz is smoother
+    kk=0
+    do k = 1,nsig
+       if (nlayers(k)<=1) then
+          kk = kk + 1
+          prsltmp_ext(kk) = prsltmp(k)
+          prsitmp_ext(kk) = prsitmp(k)
+          klevel(kk) = k
+       else
+          prsitmp_ext(kk+1) = prsitmp(k)
+          if (k == nsig) then
+             layertop = toa_prs_kpa
+          else
+             layertop = prsitmp(k+1)
+          end if
+          kg0=0
+          do l=1,nlayers(k)
+             kk=kk + 1
+             prsitmp_ext(kk+1) = (prsitmp_ext(kk)**(1.+dlnpm_ratio)/prsitmp_ext(kk-1))**(1./dlnpm_ratio)
+             if (prsitmp_ext(kk) < layertop) then 
+                kg0=kg0+1
+                if (kg0 >= 2) then
+                   write(6,*)'ADD_RTM_LAYERS_GFDL:  model pressure(hPa) =', &
+                              ten*prsitmp_ext(kk), 'level kk', kk, &
+                             ' above rtm top pressure(hPa)=',toa_pressure, &
+                             ' reduce nlayers for level ', k, 'to ', l-1
+                   call stop2(35)
+                end if
+             end if
+             if (kk == msig) then
+                prsitmp_ext(kk+1) = toa_prs_kpa
+             end if
+             prsltmp_ext(kk) = half*(prsitmp_ext(kk+1)+prsitmp_ext(kk))
+             klevel(kk) = k
+          end do
+       endif
+    end do
+
+  end subroutine add_rtm_layers_gfdl
 
 !-------------------------------------------------------------------------
 !    NOAA/NCEP, National Centers for Environmental Prediction GSI        !

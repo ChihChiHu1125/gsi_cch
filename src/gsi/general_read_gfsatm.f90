@@ -189,7 +189,8 @@ subroutine general_reload(grd,g_z,g_ps,g_tv,g_vor,g_div,g_u,g_v,g_q,g_oz,g_cwmr,
 
 end subroutine general_reload
 subroutine general_reload2(grd,g_z,g_ps,g_tv,g_vor,g_div,g_u,g_v,g_q,g_oz, &
-           g_ql,g_qi,g_qr,g_qs,g_qg,icount,iflag,ilev,work,uvflag,vdflag,g_cf)
+           g_ql,g_qi,g_qr,g_qs,g_qg,icount,iflag,ilev,work,uvflag,vdflag, &
+           g_cf,g_cnvw,g_cnvc)
 
 ! !USES:
 
@@ -213,6 +214,8 @@ subroutine general_reload2(grd,g_z,g_ps,g_tv,g_vor,g_div,g_u,g_v,g_q,g_oz, &
   real(r_kind),dimension(grd%lat2,grd%lon2,grd%nsig),intent(  out) :: g_u,g_v,&
        g_vor,g_div,g_q,g_oz,g_tv,g_ql,g_qi,g_qr,g_qs,g_qg
   real(r_kind),dimension(grd%lat2,grd%lon2,grd%nsig),intent(  out),optional :: g_cf
+  real(r_kind),dimension(grd%lat2,grd%lon2,grd%nsig),intent(  out),optional :: g_cnvw
+  real(r_kind),dimension(grd%lat2,grd%lon2,grd%nsig),intent(  out),optional :: g_cnvc
 
 
 ! !DESCRIPTION: Transfer contents of 2-d array global to 3-d subdomain array
@@ -399,6 +402,24 @@ subroutine general_reload2(grd,g_z,g_ps,g_tv,g_vor,g_div,g_u,g_v,g_q,g_oz, &
             do i=1,grd%lat2
                ij=ij+1
                g_cf(i,j,klev)=sub(ij,k)
+            enddo
+         enddo
+      elseif ( iflag(k) == 16 .and. present(g_cnvw) ) then
+         klev=ilev(k)
+         ij=0
+         do j=1,grd%lon2
+            do i=1,grd%lat2
+               ij=ij+1
+               g_cnvw(i,j,klev)=sub(ij,k)
+            enddo
+         enddo
+      elseif ( iflag(k) == 17 .and. present(g_cnvc) ) then
+         klev=ilev(k)
+         ij=0
+         do j=1,grd%lon2
+            do i=1,grd%lat2
+               ij=ij+1
+               g_cnvc(i,j,klev)=sub(ij,k)
             enddo
          enddo
       endif

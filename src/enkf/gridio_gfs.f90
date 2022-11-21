@@ -296,13 +296,26 @@
         print *,'error reading clwmr'
         call stop2(27)
      endif
-     if (imp_physics == 11) then
+     if (imp_physics == 11 .or. qi_ind > 0) then
         call read_vardata(dset, 'icmr', vg3d, ncstart=ncstart, nccount=nccount, errcode=iret)
         if (iret /= 0) then
            print *,'error reading icmr'
            call stop2(28)
         endif
-        ug3d = ug3d + vg3d
+        if (cw_ind > 0) then
+           ug3d = ug3d + vg3d
+        else
+           if (cliptracers)  where (vg3d < clip) vg3d = clip
+           call mpi_gatherv(vg3d, recvcounts(iope+1), mpi_real4, vg3d_0, recvcounts, displs,&
+                            mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+           if (iope==0) then
+              do k=1,nlevs
+                 krev = nlevs-k+1
+                 vg = reshape(vg3d_0(:,:,krev),(/nlons*nlats/))
+                 call copytogrdin(vg,grdin(:,levels(qi_ind-1)+k,nb,ne))
+              end do
+           end if
+        endif
      endif
      if (cliptracers)  where (ug3d < clip) ug3d = clip
      call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
@@ -312,7 +325,63 @@
            krev = nlevs-k+1
            ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
            call copytogrdin(ug,cw(:,k))
-           if (cw_ind > 0) grdin(:,levels(cw_ind-1)+k,nb,ne) = cw(:,k)
+           if (cw_ind > 0) then
+              grdin(:,levels(cw_ind-1)+k,nb,ne) = cw(:,k)
+           else
+              grdin(:,levels(ql_ind-1)+k,nb,ne) = cw(:,k)
+           endif   
+        end do
+     end if     
+
+  endif
+  if (qr_ind > 0) then
+     call read_vardata(dset, 'rwmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+     if (iret /= 0) then
+        print *,'error reading rwmr'
+        call stop2(26)
+     endif
+     if (cliptracers)  where (ug3d < clip) ug3d = clip
+     call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
+                      mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+     if (iope==0) then
+        do k=1,nlevs
+           krev = nlevs-k+1
+           ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
+           call copytogrdin(ug,grdin(:,levels(qr_ind-1)+k,nb,ne))
+        end do
+     end if
+  endif
+  if (qs_ind > 0) then
+     call read_vardata(dset, 'snmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+     if (iret /= 0) then
+        print *,'error reading snmr'
+        call stop2(26)
+     endif
+     if (cliptracers)  where (ug3d < clip) ug3d = clip
+     call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
+                      mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+     if (iope==0) then
+        do k=1,nlevs
+           krev = nlevs-k+1
+           ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
+           call copytogrdin(ug,grdin(:,levels(qs_ind-1)+k,nb,ne))
+        end do
+     end if
+  endif
+  if (qg_ind > 0) then
+     call read_vardata(dset, 'grle', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+     if (iret /= 0) then
+        print *,'error reading grle'
+        call stop2(26)
+     endif
+     if (cliptracers)  where (ug3d < clip) ug3d = clip
+     call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
+                      mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+     if (iope==0) then
+        do k=1,nlevs
+           krev = nlevs-k+1
+           ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
+           call copytogrdin(ug,grdin(:,levels(qg_ind-1)+k,nb,ne))
         end do
      end if
   endif
@@ -874,19 +943,67 @@
            print *,'error reading clwmr'
            call stop2(27)
         endif
-        if (imp_physics == 11) then
+        if (imp_physics == 11 .or. qi_ind > 0) then
            call read_vardata(dset, 'icmr', vg3d,errcode=iret)
            if (iret /= 0) then
               print *,'error reading icmr'
               call stop2(28)
            endif
-           ug3d = ug3d + vg3d
+           if (cw_ind > 0) then
+              ug3d = ug3d + vg3d
+           else
+              if (cliptracers)  where (vg3d < clip) vg3d = clip
+              do k=1,nlevs
+                 vg = reshape(vg3d(:,:,nlevs-k+1),(/nlons*nlats/))
+                 call copytogrdin(vg,grdin(:,levels(qi_ind-1)+k,nb,ne))
+              enddo
+           endif
         endif
         if (cliptracers)  where (ug3d < clip) ug3d = clip
         do k=1,nlevs
            ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
            call copytogrdin(ug,cw(:,k))
-           if (cw_ind > 0) grdin(:,levels(cw_ind-1)+k,nb,ne) = cw(:,k)
+           if (cw_ind > 0) then
+              grdin(:,levels(cw_ind-1)+k,nb,ne) = cw(:,k)
+           else
+              grdin(:,levels(ql_ind-1)+k,nb,ne) = cw(:,k)
+           endif
+        enddo
+     endif
+     if (qr_ind > 0) then
+        call read_vardata(dset, 'rwmr', ug3d,errcode=iret)
+        if (iret /= 0) then
+           print *,'error reading rwmr'
+           call stop2(26)
+        endif
+        if (cliptracers)  where (ug3d < clip) ug3d = clip
+        do k=1,nlevs
+           ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
+           call copytogrdin(ug,grdin(:,levels(qr_ind-1)+k,nb,ne))
+        enddo
+     endif
+     if (qs_ind > 0) then
+        call read_vardata(dset, 'snmr', ug3d,errcode=iret)
+        if (iret /= 0) then
+           print *,'error reading snmr'
+           call stop2(26)
+        endif
+        if (cliptracers)  where (ug3d < clip) ug3d = clip
+        do k=1,nlevs
+           ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
+           call copytogrdin(ug,grdin(:,levels(qs_ind-1)+k,nb,ne))
+        enddo
+     endif
+     if (qg_ind > 0) then
+        call read_vardata(dset, 'grle', ug3d,errcode=iret)
+        if (iret /= 0) then
+           print *,'error reading grle'
+           call stop2(26)
+        endif
+        if (cliptracers)  where (ug3d < clip) ug3d = clip
+        do k=1,nlevs
+           ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
+           call copytogrdin(ug,grdin(:,levels(qg_ind-1)+k,nb,ne))
         enddo
      endif
      deallocate(ug3d,vg3d)
@@ -3341,7 +3458,8 @@
   integer(i_kind) :: ncid_out, lon_dimid, lat_dimid, lev_dimid, ilev_dimid
   integer(i_kind) :: lonvarid, latvarid, levvarid, pfullvarid, ilevvarid, &
                      hyaivarid, hybivarid, uvarid, vvarid, delpvarid, delzvarid, &
-                     tvarid, sphumvarid, liqwatvarid, o3varid, icvarid
+                     tvarid, sphumvarid, liqwatvarid, o3varid, icvarid, &
+                     rwmrvarid, snmrvarid, grlevarid 
   integer(i_kind) :: iadateout
 
   ! fixed fields such as lat, lon, levs
@@ -3408,6 +3526,10 @@
   call nccheck_incr(nf90_def_var(ncid_out, "liq_wat_inc", nf90_real, dimids3, liqwatvarid))
   call nccheck_incr(nf90_def_var(ncid_out, "o3mr_inc", nf90_real, dimids3, o3varid))
   call nccheck_incr(nf90_def_var(ncid_out, "icmr_inc", nf90_real, dimids3, icvarid))
+  call nccheck_incr(nf90_def_var(ncid_out, "rwmr_inc", nf90_real, dimids3, rwmrvarid))
+  call nccheck_incr(nf90_def_var(ncid_out, "snmr_inc", nf90_real, dimids3, snmrvarid))
+  call nccheck_incr(nf90_def_var(ncid_out, "grle_inc", nf90_real, dimids3, grlevarid))
+
   ! place global attributes to serial calc_increment output
   call nccheck_incr(nf90_put_att(ncid_out, nf90_global, "source", "GSI EnKF"))
   call nccheck_incr(nf90_put_att(ncid_out, nf90_global, "comment", &
@@ -3646,24 +3768,43 @@
 
   ! liq wat increment
   ! icmr increment
-  do k=1,nlevs
-     krev = nlevs-k+1
-     ug = zero
-     if (cw_ind > 0) then
-        call copyfromgrdin(grdin(:,levels(cw_ind-1)+krev,nb,ne),ug)
-     end if
-     if (imp_physics == 11) then
-        work = -r0_05 * (reshape(tmpanl(:,:,k),(/nlons*nlats/)) - t0c)
-        do i=1,nlons*nlats
-           work(i) = max(zero,work(i))
-           work(i) = min(one,work(i))
-        enddo
-        vg = ug * work          ! cloud ice
-        ug = ug * (one - work)  ! cloud water
-        inc3d2(:,:,k) = reshape(vg,(/nlons,nlats/))
-     endif
-     inc3d(:,:,k) = reshape(ug,(/nlons,nlats/))
-  enddo
+  if (.not. use_full_hydro) then
+     do k=1,nlevs
+        krev = nlevs-k+1
+        ug = zero
+        if (cw_ind > 0) then
+           call copyfromgrdin(grdin(:,levels(cw_ind-1)+krev,nb,ne),ug)
+        end if
+        if (imp_physics == 11) then
+           work = -r0_05 * (reshape(tmpanl(:,:,k),(/nlons*nlats/)) - t0c)
+           do i=1,nlons*nlats
+              work(i) = max(zero,work(i))
+              work(i) = min(one,work(i))
+           enddo
+           vg = ug * work          ! cloud ice
+           ug = ug * (one - work)  ! cloud water
+           inc3d2(:,:,k) = reshape(vg,(/nlons,nlats/))
+        endif
+        inc3d(:,:,k) = reshape(ug,(/nlons,nlats/))
+     enddo
+  else
+     do k=1,nlevs
+        krev = nlevs-k+1
+        inc(:) = zero
+        if (ql_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(ql_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d(:,:,k) = reshape(inc,(/nlons,nlats/))
+     end do
+     do k=1,nlevs
+        krev = nlevs-k+1
+        inc(:) = zero
+        if (qi_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(qi_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d2(:,:,k) = reshape(inc,(/nlons,nlats/))
+     end do
+  endif
   do j=1,nlats
     inc3dout(:,nlats-j+1,:) = inc3d(:,j,:)
   end do
@@ -3676,6 +3817,56 @@
   if (should_zero_increments_for('icmr_inc')) inc3dout = zero
   call nccheck_incr(nf90_put_var(ncid_out, icvarid, sngl(inc3dout), &
                       start = ncstart, count = nccount))
+
+  if (use_full_hydro) then
+     ! rwmr increment
+     do k=1,nlevs
+        krev = nlevs-k+1
+        inc(:) = zero
+        if (qr_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(qr_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d(:,:,k) = reshape(inc,(/nlons,nlats/))
+     end do
+     do j=1,nlats
+       inc3dout(:,nlats-j+1,:) = inc3d(:,j,:)
+     end do
+     if (should_zero_increments_for('rwmr_inc')) inc3dout = zero
+     call nccheck_incr(nf90_put_var(ncid_out, rwmrvarid, sngl(inc3dout), &
+                         start = ncstart, count = nccount))
+  
+     ! snmr increment
+     do k=1,nlevs
+        krev = nlevs-k+1
+        inc(:) = zero
+        if (qs_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(qs_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d(:,:,k) = reshape(inc,(/nlons,nlats/))
+     end do
+     do j=1,nlats
+       inc3dout(:,nlats-j+1,:) = inc3d(:,j,:)
+     end do
+     if (should_zero_increments_for('snmr_inc')) inc3dout = zero
+     call nccheck_incr(nf90_put_var(ncid_out, snmrvarid, sngl(inc3dout), &
+                         start = ncstart, count = nccount))
+
+     ! grle increment
+     do k=1,nlevs
+        krev = nlevs-k+1
+        inc(:) = zero
+        if (qg_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(qg_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d(:,:,k) = reshape(inc,(/nlons,nlats/))
+     end do
+     do j=1,nlats
+       inc3dout(:,nlats-j+1,:) = inc3d(:,j,:)
+     end do
+     if (should_zero_increments_for('grle_inc')) inc3dout = zero
+     call nccheck_incr(nf90_put_var(ncid_out, grlevarid, sngl(inc3dout), &
+                         start = ncstart, count = nccount))
+  endif
 
   ! deallocate things
   deallocate(inc3d,inc3d2,inc3dout)
@@ -3744,7 +3935,8 @@
   integer(i_kind) :: ncid_out, lon_dimid, lat_dimid, lev_dimid, ilev_dimid
   integer(i_kind) :: lonvarid, latvarid, levvarid, pfullvarid, ilevvarid, &
                      hyaivarid, hybivarid, uvarid, vvarid, delpvarid, delzvarid, &
-                     tvarid, sphumvarid, liqwatvarid, o3varid, icvarid
+                     tvarid, sphumvarid, liqwatvarid, o3varid, icvarid, &
+                     rwmrvarid, snmrvarid, grlevarid
   integer(i_kind) :: iadateout
 
   ! fixed fields such as lat, lon, levs
@@ -3846,6 +4038,13 @@
   call nccheck_incr(nf90_var_par_access(ncid_out, o3varid, nf90_collective))
   call nccheck_incr(nf90_def_var(ncid_out, "icmr_inc", nf90_real, dimids3, icvarid))
   call nccheck_incr(nf90_var_par_access(ncid_out, icvarid, nf90_collective))
+  call nccheck_incr(nf90_def_var(ncid_out, "rwmr_inc", nf90_real, dimids3, rwmrvarid))
+  call nccheck_incr(nf90_var_par_access(ncid_out, rwmrvarid, nf90_collective))
+  call nccheck_incr(nf90_def_var(ncid_out, "snmr_inc", nf90_real, dimids3, snmrvarid))
+  call nccheck_incr(nf90_var_par_access(ncid_out, snmrvarid, nf90_collective))
+  call nccheck_incr(nf90_def_var(ncid_out, "grle_inc", nf90_real, dimids3, grlevarid))
+  call nccheck_incr(nf90_var_par_access(ncid_out, grlevarid, nf90_collective))
+
   ! place global attributes to parallel calc_increment output
   call nccheck_incr(nf90_put_att(ncid_out, nf90_global, "source", "GSI EnKF"))
   call nccheck_incr(nf90_put_att(ncid_out, nf90_global, "comment", &
@@ -4096,25 +4295,46 @@
 
   ! liq wat increment
   ! icmr increment
-  do k=lev_pe1(iope), lev_pe2(iope)
-     krev = nlevs-k+1
-     ki = k - lev_pe1(iope) + 1
-     ug = zero
-     if (cw_ind > 0) then
-        call copyfromgrdin(grdin(:,levels(cw_ind-1)+krev,nb,ne),ug)
-     end if
-     if (imp_physics == 11) then
-        work = -r0_05 * (reshape(tmpanl(:,:,ki),(/nlons*nlats/)) - t0c)
-        do i=1,nlons*nlats
-           work(i) = max(zero,work(i))
-           work(i) = min(one,work(i))
-        enddo
-        vg = ug * work          ! cloud ice
-        ug = ug * (one - work)  ! cloud water
-        inc3d2(:,:,ki) = reshape(vg,(/nlons,nlats/))
-     endif
-     inc3d(:,:,ki) = reshape(ug,(/nlons,nlats/))
-  enddo
+  if (.not. use_full_hydro) then
+     do k=lev_pe1(iope), lev_pe2(iope)
+        krev = nlevs-k+1
+        ki = k - lev_pe1(iope) + 1
+        ug = zero
+        if (cw_ind > 0) then
+           call copyfromgrdin(grdin(:,levels(cw_ind-1)+krev,nb,ne),ug)
+        end if
+        if (imp_physics == 11) then
+           work = -r0_05 * (reshape(tmpanl(:,:,ki),(/nlons*nlats/)) - t0c)
+           do i=1,nlons*nlats
+              work(i) = max(zero,work(i))
+              work(i) = min(one,work(i))
+           enddo
+           vg = ug * work          ! cloud ice
+           ug = ug * (one - work)  ! cloud water
+           inc3d2(:,:,ki) = reshape(vg,(/nlons,nlats/))
+        endif
+        inc3d(:,:,ki) = reshape(ug,(/nlons,nlats/))
+     enddo
+  else
+     do k=lev_pe1(iope), lev_pe2(iope)
+        krev = nlevs-k+1
+        ki = k - lev_pe1(iope) + 1
+        inc(:) = zero
+        if (ql_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(ql_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d(:,:,ki) = reshape(inc,(/nlons,nlats/))
+     end do
+     do k=lev_pe1(iope), lev_pe2(iope)
+        krev = nlevs-k+1
+        ki = k - lev_pe1(iope) + 1
+        inc(:) = zero
+        if (qi_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(qi_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d2(:,:,ki) = reshape(inc,(/nlons,nlats/))
+     end do
+  endif 
   do j=1,nlats
     inc3dout(:,nlats-j+1,:) = inc3d(:,j,:)
   end do
@@ -4127,6 +4347,59 @@
   if (should_zero_increments_for('icmr_inc')) inc3dout = zero
   call nccheck_incr(nf90_put_var(ncid_out, icvarid, sngl(inc3dout), &
                       start = ncstart, count = nccount))
+
+  if (use_full_hydro) then
+     ! rwmr increment
+     do k=lev_pe1(iope), lev_pe2(iope)
+        krev = nlevs-k+1
+        ki = k - lev_pe1(iope) + 1
+        inc(:) = zero
+        if (qr_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(qr_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d(:,:,ki) = reshape(inc,(/nlons,nlats/))
+     end do
+     do j=1,nlats
+       inc3dout(:,nlats-j+1,:) = inc3d(:,j,:)
+     end do
+     if (should_zero_increments_for('rwmr_inc')) inc3dout = zero
+     call nccheck_incr(nf90_put_var(ncid_out, rwmrvarid, sngl(inc3dout), &
+                         start = ncstart, count = nccount))
+  
+     ! snmr increment
+     do k=lev_pe1(iope), lev_pe2(iope)
+        krev = nlevs-k+1
+        ki = k - lev_pe1(iope) + 1
+        inc(:) = zero
+        if (qs_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(qs_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d(:,:,ki) = reshape(inc,(/nlons,nlats/))
+     end do
+     do j=1,nlats
+       inc3dout(:,nlats-j+1,:) = inc3d(:,j,:)
+     end do
+     if (should_zero_increments_for('snmr_inc')) inc3dout = zero
+     call nccheck_incr(nf90_put_var(ncid_out, snmrvarid, sngl(inc3dout), &
+                         start = ncstart, count = nccount))
+
+     ! grle increment
+     do k=lev_pe1(iope), lev_pe2(iope)
+        krev = nlevs-k+1
+        ki = k - lev_pe1(iope) + 1
+        inc(:) = zero
+        if (qg_ind > 0) then
+          call copyfromgrdin(grdin(:,levels(qg_ind-1) + krev,nb,ne),inc)
+        endif
+        inc3d(:,:,ki) = reshape(inc,(/nlons,nlats/))
+     end do
+     do j=1,nlats
+       inc3dout(:,nlats-j+1,:) = inc3d(:,j,:)
+     end do
+     if (should_zero_increments_for('grle_inc')) inc3dout = zero
+     call nccheck_incr(nf90_put_var(ncid_out, grlevarid, sngl(inc3dout), &
+                         start = ncstart, count = nccount))
+  endif
 
   call mpi_barrier(iocomms(mem_pe(nproc)), iret)
 

@@ -530,6 +530,7 @@ subroutine write_spread_dualres(ibin,bundle)
   use gsi_bundlemod, only: gsi_bundlegetpointer
   use control_vectors, only: cvars2d,cvars3d,nc2d,nc3d
   use constants, only: zero
+  use radinfo, only: allsky_verbose
   implicit none
 
   integer(i_kind), intent(in) :: ibin
@@ -547,13 +548,15 @@ subroutine write_spread_dualres(ibin,bundle)
   real(r_kind),pointer,dimension(:,:,:):: ptr3d
   real(r_kind),pointer,dimension(:,:):: ptr2d
 
-  integer(i_kind) iret,i,j,k,n,mem2d,mem3d,num3d,lu,istat
+  integer(i_kind) iret,i,j,k,n,mem2d,mem3d,lu,istat
   real(r_kind),dimension(grd_anl%nsig+1) :: prs
+
+  real(r_single),allocatable,dimension(:) :: glon,glat
+  real(r_kind) :: dx, dy
 
 ! Initial memory used by 2d and 3d grids
   mem2d = 4*grd_anl%nlat*grd_anl%nlon
   mem3d = 4*grd_anl%nlat*grd_anl%nlon*grd_anl%nsig
-  num3d=11
 
   allocate(work8_3d(grd_anl%nlat,grd_anl%nlon,grd_anl%nsig))
   allocate(work8_2d(grd_anl%nlat,grd_anl%nlon))
@@ -564,6 +567,25 @@ subroutine write_spread_dualres(ibin,bundle)
     write(grdfile,'(a,i3.3,a)') 'ens_spread_',ibin, '.grd'
     call baopenwt(22,trim(grdfile),iret)
     write(6,*)'WRITE_SPREAD_DUALRES:  open 22 to ',trim(grdfile),' with iret=',iret
+
+    if (allsky_verbose) then
+       allocate(glon(grd_anl%nlon),glat(grd_anl%nlat))
+       dx=360./grd_anl%nlon
+       dy=180./(grd_anl%nlat-1.)
+       do i=1,grd_anl%nlon
+          glon(i)=(i-1)*dx
+       end do
+       do j=1,grd_anl%nlat
+          glat(j)=-90.0+(j-1)*dy
+       end do
+       open(33,file=trim(grdfile)//'.dat',form='unformatted',access='stream')
+       write(33)real(grd_anl%nlon,4),real(grd_anl%nlat,4),real(grd_anl%nsig,4), &
+                real(nc3d,4), real(nc2d,4)
+       write(33) glon
+       write(33) glat
+       deallocate(glon,glat)
+    endif
+
   endif
 
 ! Process 3d arrays
@@ -583,6 +605,9 @@ subroutine write_spread_dualres(ibin,bundle)
       end do
       call wryte(22,mem3d,work4_3d)
       write(6,*)'WRITE_SPREAD_DUALRES FOR VARIABLE NUM ',n
+      if (allsky_verbose) then
+         write(33) work4_3d
+      endif
     endif
   end do
 
@@ -599,6 +624,9 @@ subroutine write_spread_dualres(ibin,bundle)
        end do
        call wryte(22,mem2d,work4_2d)
        write(6,*)'WRITE_SPREAD_DUALRES FOR 2D FIELD '
+       if (allsky_verbose) then
+          write(33) work4_2d
+       endif
     endif
   end do
 
@@ -606,6 +634,9 @@ subroutine write_spread_dualres(ibin,bundle)
   if (mype==0) then
      call baclose(22,iret)
      write(6,*)'WRITE_SPREAD_DUALRES:  close 22 with iret=',iret
+     if (allsky_verbose) then
+        close(33)
+     endif
   end if
 
 ! Get reference pressure levels for grads purposes
@@ -615,7 +646,7 @@ subroutine write_spread_dualres(ibin,bundle)
   if (mype==0) then
      write(grdctl,'(a,i3.3,a)') 'ens_spread_',ibin, '.ctl'
      open(newunit=lu,file=trim(grdctl),form='formatted')
-     write(lu,'(2a)') 'DSET  ^', trim(grdfile)
+     write(lu,'(2a)') 'DSET  ^', trim(grdfile)//'.grd'
      write(lu,'(2a)') 'TITLE ', 'gsi ensemble spread'
      write(lu,'(a,2x,e13.6)') 'UNDEF', 1.E+15 ! any other preference for this?
      write(lu,'(a,2x,i4,2x,a,2x,f5.1,2x,f9.6)') 'XDEF',grd_anl%nlon, 'LINEAR',   0.0, 360./grd_anl%nlon

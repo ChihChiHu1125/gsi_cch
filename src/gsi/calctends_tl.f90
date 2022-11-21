@@ -175,6 +175,7 @@ subroutine calctends_tl(fields,fields_dt,mype)
   call gsi_bundlegetpointer(gsi_xderivative_bundle(it),'tv',ges_tv_lon,istatus);ier=istatus+ier
   call gsi_bundlegetpointer(gsi_xderivative_bundle(it),'q', ges_q_lon ,istatus);ier=istatus+ier
   call gsi_bundlegetpointer(gsi_xderivative_bundle(it),'oz',ges_oz_lon,istatus);ier=istatus+ier
+  if (icw>0) &
   call gsi_bundlegetpointer(gsi_xderivative_bundle(it),'cw',ges_cw_lon,istatus);ier=istatus+ier
   if(ier/=0) then
      write(6,*) myname, ': pointers not found in lon-derivatives, ier=', ier
@@ -187,6 +188,7 @@ subroutine calctends_tl(fields,fields_dt,mype)
   call gsi_bundlegetpointer(gsi_yderivative_bundle(it),'tv',ges_tv_lat,istatus);ier=istatus+ier
   call gsi_bundlegetpointer(gsi_yderivative_bundle(it),'q', ges_q_lat ,istatus);ier=istatus+ier
   call gsi_bundlegetpointer(gsi_yderivative_bundle(it),'oz',ges_oz_lat,istatus);ier=istatus+ier
+  if (icw>0) &
   call gsi_bundlegetpointer(gsi_yderivative_bundle(it),'cw',ges_cw_lat,istatus);ier=istatus+ier
   if(ier/=0) then
      write(6,*) myname, ': pointers not found in lat-derivatives, ier=', ier
@@ -230,6 +232,7 @@ subroutine calctends_tl(fields,fields_dt,mype)
   call gsi_bundlegetpointer(xderivative,'tv'  ,  t_x,istatus)
   call gsi_bundlegetpointer(xderivative,'q'   ,  q_x,istatus)
   call gsi_bundlegetpointer(xderivative,'oz'  , oz_x,istatus)
+  if (icw>0) &
   call gsi_bundlegetpointer(xderivative,'cw'  , cw_x,istatus)
   call gsi_bundlegetpointer(xderivative,'prse',pri_x,istatus)
 
@@ -239,6 +242,7 @@ subroutine calctends_tl(fields,fields_dt,mype)
   call gsi_bundlegetpointer(yderivative,'tv'  ,  t_y,istatus)
   call gsi_bundlegetpointer(yderivative,'q'   ,  q_y,istatus)
   call gsi_bundlegetpointer(yderivative,'oz'  , oz_y,istatus)
+  if (icw>0) &
   call gsi_bundlegetpointer(yderivative,'cw'  , cw_y,istatus)
   call gsi_bundlegetpointer(yderivative,'prse',pri_y,istatus)
 

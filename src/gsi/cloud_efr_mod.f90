@@ -17,7 +17,7 @@ module cloud_efr_mod
 ! subroutines included:
 !   sub cloud_calc            - cloud composition
 !   sub cloud_calc_gfs        - cloud composition (gfs)
-!   sub set_cloud_lower_bound - set lower bound for cloud water (gfs)
+!   sub set_cloud_bound - set bound for cloud water (gfs)
 !   sub effrds                - effective radius
 !
 ! attributes:
@@ -40,7 +40,7 @@ module cloud_efr_mod
   public :: cloud_calc
   public :: cloud_calc_gfs
   public :: cloud_final
-  public :: set_cloud_lower_bound
+  public :: set_cloud_bound
   public :: efr_ql,efr_qi,efr_qr,efr_qs,efr_qg,efr_qh
 
   real(r_kind),allocatable,dimension(:,:,:,:):: efr_ql     ! effective radius for cloud liquid water
@@ -333,38 +333,79 @@ subroutine cloud_calc_gfs(g_ql,g_qi,g_cwmr,g_q,g_tv,lower_bound,g_cf)
   return
 end subroutine cloud_calc_gfs
 
-subroutine set_cloud_lower_bound(g_cwmr)
+subroutine cloud_calc_gfs2(g_ql,g_cnvw,lower_bound)
 !$$$  subprogram documentation block
 !                .      .    .                                       .
-! subprogram:    set_cloud_lower_bound    
+! subprogram:    cloud_calc_gfs2     calculate cloud mixing ratio
+!   prgmmr: mtong          org: np22                date: 2017-12-21
+!
+! abstract: calculate cloud water total condensate
+!
+! program history log:
+
+  use gridmod, only: lat2,lon2,nsig
+  use constants, only: qcmin
+  implicit none
+
+! Declare passed variables
+  real(r_kind),dimension(lat2,lon2,nsig),intent(inout):: g_ql   ! mixing ratio of cloud liquid water [Kg/Kg]
+  real(r_kind),dimension(lat2,lon2,nsig),intent(in   ):: g_cnvw ! mixing ratio of convective cloud liquid water [Kg/Kg]
+
+! Declare local variables
+  integer(i_kind):: i,j,k
+  logical,intent(in):: lower_bound
+
+! Calculate total condensate  
+  do k=1,nsig
+     do j=1,lon2
+        do i=1,lat2
+           g_ql(i,j,k) =g_ql(i,j,k)+g_cnvw(i,j,k)
+           if (lower_bound) g_ql(i,j,k) =max(qcmin,g_ql(i,j,k))
+        end do
+     end do
+  end do
+
+  return
+end subroutine cloud_calc_gfs2
+
+subroutine set_cloud_bound(g_qx,iscf)
+!$$$  subprogram documentation block
+!                .      .    .                                       .
+! subprogram:    set_cloud_bound    
 !   prgmmr: eliu          org: np22                date: 2011-11-01
 !
 ! abstract: set minimum value for cloud water mixing ratio  
 !
 ! program history log:
 !   2011-11-01 eliu   set minimum value for cloud water mixing ratio 
+!   2017-12-21 tong   generalize to all hydrometeors
 
   use gridmod, only: lat2,lon2,nsig
+  use constants, only: qcmin
   implicit none
 
 ! Declare passed variables
-  real(r_kind),dimension(lat2,lon2,nsig),intent(inout):: g_cwmr   ! mixing ratio of cloud liquid water [Kg/Kg]
+  real(r_kind),dimension(lat2,lon2,nsig),intent(inout):: g_qx   ! mixing ratio [Kg/Kg]
+  logical :: iscf ! is cloud fraction
 
 ! Declare local variables
   integer(i_kind):: i,j,k
 
-! Set lower bound for cloud water  mixing ratio (according to B. Ferrier)
-  do k = 1, nsig
-     do j = 1, lon2
-        do i = 1, lat2
-           if (g_cwmr(i,j,k) <= qcmin) then
-              g_cwmr(i,j,k)=zero   
-           endif
+! Set lower bound for mixing ratio (according to B. Ferrier)
+  do k=1,nsig
+     do j=1,lon2
+        do i=1,lat2
+           if (.not. iscf) then
+              g_qx(i,j,k)=max(qcmin,g_qx(i,j,k))
+           else
+              g_qx(i,j,k)=min(max(zero,g_qx(i,j,k)),one)         
+           end if
         enddo
      enddo
   enddo
+
   return
-end subroutine set_cloud_lower_bound 
+end subroutine set_cloud_bound 
 
       SUBROUTINE EFFRDS(P1D,T1D,Q1D,QW1,QI1,QR1,FS1D, &
                         EFR_QL,EFR_QI,EFR_QR,EFR_QS,EFR_QG,EFR_QH)
