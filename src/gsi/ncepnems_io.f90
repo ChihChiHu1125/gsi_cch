@@ -274,7 +274,7 @@ contains
     use gsi_bundlemod, only: gsi_bundledestroy
     use general_sub2grid_mod, only: sub2grid_info,general_sub2grid_create_info,general_sub2grid_destroy_info
     use mpimod, only: npe,mype
-    use cloud_efr_mod, only: cloud_calc_gfs,set_cloud_lower_bound
+    use cloud_efr_mod, only: cloud_calc_gfs
     use gridmod, only: fv3_full_hydro
     implicit none
 
@@ -387,7 +387,6 @@ contains
                           associated(ges_ql_it)  .and.&
                           associated(ges_qi_it)  .and.&
                           associated(ges_tv_it)
-!         call set_cloud_lower_bound(ges_cwmr_it)
           if (mype==0) write(6,*)'READ_GFS_NEMS: l_cld_derived = ', l_cld_derived
           if (l_cld_derived) then
              if (associated(ges_cf_it)) then

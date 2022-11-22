@@ -594,14 +594,29 @@ subroutine init_crtm(init_pass,mype_diaghdr,mype,nchanl,nreal,isis,obstype,radmo
         write(6,*)myname_,': crtm_init() on path "'//trim(crtm_coeffs_path)//'"'
     error_status = crtm_init(sensorlist,channelinfo,&
        Process_ID=mype,Output_Process_ID=mype_diaghdr, &
-       Load_CloudCoeff=Load_CloudCoeff,CloudCoeff_Format=CloudCoeff_Format, &
-       CloudCoeff_File=CloudCoeff_File,Load_AerosolCoeff=Load_AerosolCoeff, &
-       File_Path=crtm_coeffs_path,NC_File_Path=crtm_coeffs_path,quiet=quiet )
+! for crtm2.4.1
+!<Aero need to comment out if CRTM doesn't support 
+!       Aerosol_Model=Aerosol_Model,AerosolCoeff_File=AerosolCoeff_File, &
+!       AerosolCoeff_Format=AerosolCoeff_Format, &
+!Aero>
+       Load_CloudCoeff=Load_CloudCoeff,Load_AerosolCoeff=Load_AerosolCoeff, &
+! for crtm develop branch
+!      CloudCoeff_Format=CloudCoeff_Format,CloudCoeff_File=CloudCoeff_File, &
+!      NC_File_Path=crtm_coeffs_path,
+       File_Path = crtm_coeffs_path,quiet=quiet )
  else
+
     error_status = crtm_init(sensorlist,channelinfo,&
        Process_ID=mype,Output_Process_ID=mype_diaghdr, &
-       Load_CloudCoeff=Load_CloudCoeff,CloudCoeff_Format=CloudCoeff_Format,&
-       CloudCoeff_File=CloudCoeff_File,Load_AerosolCoeff=Load_AerosolCoeff,&
+
+! for crtm2.4.1
+!Aero need to comment out if CRTM doesn't support 
+!       Aerosol_Model=Aerosol_Model,AerosolCoeff_File=AerosolCoeff_File, &
+!       AerosolCoeff_Format=AerosolCoeff_Format, &
+!Aero
+       Load_CloudCoeff=Load_CloudCoeff,Load_AerosolCoeff=Load_AerosolCoeff,&
+! for crtm develop branch
+!       CloudCoeff_Format=CloudCoeff_Format,CloudCoeff_File=CloudCoeff_File,&
        quiet=quiet)
  endif
  if (error_status /= success) then
@@ -1181,7 +1196,7 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
   real(r_kind),dimension(msig)  :: prsl_rtm
   real(r_kind),dimension(msig)  :: auxq,auxdp
   real(r_kind),dimension(nsig)  :: poz
-  real(r_kind),dimension(nsig)  :: rh,qs
+  real(r_kind),dimension(nsig)  :: rh
   real(r_kind),dimension(5)     :: tmp_time
   real(r_kind),dimension(0:3)   :: dtskin
   real(r_kind),dimension(msig)  :: c6
@@ -1972,14 +1987,6 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
        end if ! lread_ext_aerosol
     end if ! n_actual_aerosols_wk > 0
     do k=1,nsig
-        qs(k) = (ges_qsat(ix ,iy ,k,itsig )*w00+ &
-                 ges_qsat(ixp,iy ,k,itsig )*w10+ &
-                 ges_qsat(ix ,iyp,k,itsig )*w01+ &
-                 ges_qsat(ixp,iyp,k,itsig )*w11)*dtsig + &
-                (ges_qsat(ix ,iy ,k,itsigp)*w00+ &
-                 ges_qsat(ixp,iy ,k,itsigp)*w10+ &
-                 ges_qsat(ix ,iyp,k,itsigp)*w01+ &
-                 ges_qsat(ixp,iyp,k,itsigp)*w11)*dtsigp
         rh(k) = q(k)/qs(k)
     end do
   endif
@@ -2030,6 +2037,11 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
      kk2 = klevel(kk)
      atmosphere(1)%temperature(k) = h(kk2)
      atmosphere(1)%absorber(k,1)  = q(kk2)*c3(kk2)
+     if(present(atprofile))then
+        atprofile(k,1)=atmosphere(1)%pressure(k)
+        atprofile(k,2)=atmosphere(1)%temperature(k)
+        atprofile(k,3)=atmosphere(1)%absorber(k,1)
+     end if
      if(iozs==0) then
         atmosphere(1)%absorber(k,2)  = poz(kk2)
      else
