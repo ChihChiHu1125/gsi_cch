@@ -600,9 +600,8 @@ subroutine init_crtm(init_pass,mype_diaghdr,mype,nchanl,nreal,isis,obstype,radmo
 !       AerosolCoeff_Format=AerosolCoeff_Format, &
 !Aero>
        Load_CloudCoeff=Load_CloudCoeff,Load_AerosolCoeff=Load_AerosolCoeff, &
-! for crtm develop branch
-!      CloudCoeff_Format=CloudCoeff_Format,CloudCoeff_File=CloudCoeff_File, &
-!      NC_File_Path=crtm_coeffs_path,
+       CloudCoeff_Format=CloudCoeff_Format,CloudCoeff_File=CloudCoeff_File, &
+       NC_File_Path=crtm_coeffs_path, &
        File_Path = crtm_coeffs_path,quiet=quiet )
  else
 
@@ -615,8 +614,7 @@ subroutine init_crtm(init_pass,mype_diaghdr,mype,nchanl,nreal,isis,obstype,radmo
 !       AerosolCoeff_Format=AerosolCoeff_Format, &
 !Aero
        Load_CloudCoeff=Load_CloudCoeff,Load_AerosolCoeff=Load_AerosolCoeff,&
-! for crtm develop branch
-!       CloudCoeff_Format=CloudCoeff_Format,CloudCoeff_File=CloudCoeff_File,&
+       CloudCoeff_Format=CloudCoeff_Format,CloudCoeff_File=CloudCoeff_File,&
        quiet=quiet)
  endif
  if (error_status /= success) then

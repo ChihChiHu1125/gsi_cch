@@ -768,7 +768,7 @@
        use_pbl,use_compress,nsig_ext,gpstop,commgpstop, commgpserrinf, &
        perturb_obs,perturb_fact,oberror_tune,preserve_restart_date, &
        crtm_coeffs_path,hydrotable_format,hydrotype, &
-       crtm_overlap,rewopt,reiopt,allsky_gfdl,allsky_verbose,dlnpm_ratio, &
+       crtm_overlap,rewopt,reiopt,allsky_gfdl,allsky_verbose, &
        cloud_mask_option,mask_threshold,berror_stats,tcp_posmatch,tcp_box, &
        newpc4pred,adp_anglebc,angord,passive_bc,use_edges,emiss_bc,upd_pred,reset_bad_radbc,&
        ssmis_method, ssmis_precond, gmi_method, amsr2_method, bias_zero_start, &
@@ -842,7 +842,7 @@
        diagnostic_reg,update_regsfc,netcdf,regional,wrf_nmm_regional,nems_nmmb_regional,fv3_regional,fv3_cmaq_regional,&
        wrf_mass_regional,twodvar_regional,filled_grid,half_grid,nvege_type,nlayers,cmaq_regional,&
        nmmb_reference_grid,grid_ratio_nmmb,grid_ratio_fv3_regional,grid_ratio_wrfmass,jcap_gfs,jcap_cut,&
-       wrf_mass_hybridcord,grid_type_fv3_regional,fv3_io_layout_y
+       wrf_mass_hybridcord,grid_type_fv3_regional,fv3_io_layout_y,dlnpm_ratio
 
 ! BKGERR (background error related variables):
 !     vs       - scale factor for vertical correlation lengths for background error

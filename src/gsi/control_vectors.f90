@@ -400,7 +400,7 @@ if (mype==0) then
     write(6,*) myname_,': MOTLEY CONTROL VARIABLES ', cvarsmd
     write(6,*) myname_,': ALL CONTROL VARIABLES    ', nrf_var
 end if
-lcalc_gfdl_cfrac = .false.
+lcalc_gfdl_cfrac = .true.
 
 end subroutine init_anacv
 subroutine final_anacv
