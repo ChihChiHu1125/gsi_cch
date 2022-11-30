@@ -290,100 +290,119 @@
         end do
      end if
   endif
-  if (cw_ind > 0 .or. ql_ind > 0 .or. qi_ind > 0) then
-     call read_vardata(dset, 'clwmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
-     if (iret /= 0) then
-        print *,'error reading clwmr'
-        call stop2(27)
+  if (.not. use_full_hydro) then 
+     if (cw_ind > 0 .or. ql_ind > 0 .or. qi_ind > 0) then
+        call read_vardata(dset, 'clwmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+        if (iret /= 0) then
+           print *,'error reading clwmr'
+           call stop2(27)
+        endif
+        if (imp_physics == 11) then
+           call read_vardata(dset, 'icmr', vg3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+           if (iret /= 0) then
+              print *,'error reading icmr'
+              call stop2(28)
+           endif
+           ug3d = ug3d + vg3d
+        endif
+        if (cliptracers)  where (ug3d < clip) ug3d = clip
+        call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
+                         mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+        if (iope==0) then
+           do k=1,nlevs
+              krev = nlevs-k+1
+              ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
+              call copytogrdin(ug,cw(:,k))
+              if (cw_ind > 0) grdin(:,levels(cw_ind-1)+k,nb,ne) = cw(:,k)
+           end do
+        end if     
      endif
-     if (imp_physics == 11 .or. qi_ind > 0) then
-        call read_vardata(dset, 'icmr', vg3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+  else
+     if (ql_ind > 0) then
+        call read_vardata(dset, 'clwmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+        if (iret /= 0) then
+           print *,'error reading clwmr'
+           call stop2(26)
+        endif
+        if (cliptracers)  where (ug3d < clip) ug3d = clip
+        call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
+                         mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+        if (iope==0) then
+           do k=1,nlevs
+              krev = nlevs-k+1
+              ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(ql_ind-1)+k,nb,ne))
+           end do
+        end if
+     endif
+     if (qi_ind > 0) then
+        call read_vardata(dset, 'icmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
         if (iret /= 0) then
            print *,'error reading icmr'
-           call stop2(28)
+           call stop2(26)
         endif
-        if (cw_ind > 0) then
-           ug3d = ug3d + vg3d
-        else
-           if (cliptracers)  where (vg3d < clip) vg3d = clip
-           call mpi_gatherv(vg3d, recvcounts(iope+1), mpi_real4, vg3d_0, recvcounts, displs,&
-                            mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
-           if (iope==0) then
-              do k=1,nlevs
-                 krev = nlevs-k+1
-                 vg = reshape(vg3d_0(:,:,krev),(/nlons*nlats/))
-                 call copytogrdin(vg,grdin(:,levels(qi_ind-1)+k,nb,ne))
-              end do
-           end if
+        if (cliptracers)  where (ug3d < clip) ug3d = clip
+        call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
+                         mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+        if (iope==0) then
+           do k=1,nlevs
+              krev = nlevs-k+1
+              ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(qi_ind-1)+k,nb,ne))
+           end do
+        end if
+     endif
+     if (qr_ind > 0) then
+        call read_vardata(dset, 'rwmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+        if (iret /= 0) then
+           print *,'error reading rwmr'
+           call stop2(26)
         endif
+        if (cliptracers)  where (ug3d < clip) ug3d = clip
+        call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
+                         mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+        if (iope==0) then
+           do k=1,nlevs
+              krev = nlevs-k+1
+              ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(qr_ind-1)+k,nb,ne))
+           end do
+        end if
      endif
-     if (cliptracers)  where (ug3d < clip) ug3d = clip
-     call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
-                      mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
-     if (iope==0) then
-        do k=1,nlevs
-           krev = nlevs-k+1
-           ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
-           call copytogrdin(ug,cw(:,k))
-           if (cw_ind > 0) then
-              grdin(:,levels(cw_ind-1)+k,nb,ne) = cw(:,k)
-           else
-              grdin(:,levels(ql_ind-1)+k,nb,ne) = cw(:,k)
-           endif   
-        end do
-     end if     
-
-  endif
-  if (qr_ind > 0) then
-     call read_vardata(dset, 'rwmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
-     if (iret /= 0) then
-        print *,'error reading rwmr'
-        call stop2(26)
+     if (qs_ind > 0) then
+        call read_vardata(dset, 'snmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+        if (iret /= 0) then
+           print *,'error reading snmr'
+           call stop2(26)
+        endif
+        if (cliptracers)  where (ug3d < clip) ug3d = clip
+        call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
+                         mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+        if (iope==0) then
+           do k=1,nlevs
+              krev = nlevs-k+1
+              ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(qs_ind-1)+k,nb,ne))
+           end do
+        end if
      endif
-     if (cliptracers)  where (ug3d < clip) ug3d = clip
-     call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
-                      mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
-     if (iope==0) then
-        do k=1,nlevs
-           krev = nlevs-k+1
-           ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
-           call copytogrdin(ug,grdin(:,levels(qr_ind-1)+k,nb,ne))
-        end do
-     end if
-  endif
-  if (qs_ind > 0) then
-     call read_vardata(dset, 'snmr', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
-     if (iret /= 0) then
-        print *,'error reading snmr'
-        call stop2(26)
+     if (qg_ind > 0) then
+        call read_vardata(dset, 'grle', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
+        if (iret /= 0) then
+           print *,'error reading grle'
+           call stop2(26)
+        endif
+        if (cliptracers)  where (ug3d < clip) ug3d = clip
+        call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
+                         mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
+        if (iope==0) then
+           do k=1,nlevs
+              krev = nlevs-k+1
+              ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(qg_ind-1)+k,nb,ne))
+           end do
+        end if
      endif
-     if (cliptracers)  where (ug3d < clip) ug3d = clip
-     call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
-                      mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
-     if (iope==0) then
-        do k=1,nlevs
-           krev = nlevs-k+1
-           ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
-           call copytogrdin(ug,grdin(:,levels(qs_ind-1)+k,nb,ne))
-        end do
-     end if
-  endif
-  if (qg_ind > 0) then
-     call read_vardata(dset, 'grle', ug3d, ncstart=ncstart, nccount=nccount, errcode=iret)
-     if (iret /= 0) then
-        print *,'error reading grle'
-        call stop2(26)
-     endif
-     if (cliptracers)  where (ug3d < clip) ug3d = clip
-     call mpi_gatherv(ug3d, recvcounts(iope+1), mpi_real4, ug3d_0, recvcounts, displs,&
-                      mpi_real4, 0, iocomms(mem_pe(nproc)),iret)
-     if (iope==0) then
-        do k=1,nlevs
-           krev = nlevs-k+1
-           ug = reshape(ug3d_0(:,:,krev),(/nlons*nlats/))
-           call copytogrdin(ug,grdin(:,levels(qg_ind-1)+k,nb,ne))
-        end do
-     end if
   endif
   deallocate(ug3d,vg3d)
 
@@ -937,75 +956,91 @@
            call copytogrdin(ug,grdin(:,levels(oz_ind-1)+k,nb,ne))
         enddo
      endif
-     if (cw_ind > 0 .or. ql_ind > 0 .or. qi_ind > 0) then
-        call read_vardata(dset, 'clwmr', ug3d,errcode=iret)
-        if (iret /= 0) then
-           print *,'error reading clwmr'
-           call stop2(27)
+     if (.not. use_full_hydro) then
+        if (cw_ind > 0 .or. ql_ind > 0 .or. qi_ind > 0) then
+           call read_vardata(dset, 'clwmr', ug3d,errcode=iret)
+           if (iret /= 0) then
+              print *,'error reading clwmr'
+              call stop2(27)
+           endif
+           if (imp_physics == 11) then
+              call read_vardata(dset, 'icmr', vg3d,errcode=iret)
+              if (iret /= 0) then
+                 print *,'error reading icmr'
+                 call stop2(28)
+              endif
+              ug3d = ug3d + vg3d
+           endif
+           if (cliptracers)  where (ug3d < clip) ug3d = clip
+           do k=1,nlevs
+              ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
+              call copytogrdin(ug,cw(:,k))
+              if (cw_ind > 0) grdin(:,levels(cw_ind-1)+k,nb,ne) = cw(:,k)
+           enddo
         endif
-        if (imp_physics == 11 .or. qi_ind > 0) then
-           call read_vardata(dset, 'icmr', vg3d,errcode=iret)
+     else
+        if (ql_ind > 0) then
+           call read_vardata(dset, 'clwmr', ug3d,errcode=iret)
+           if (iret /= 0) then
+              print *,'error reading clwmr'
+              call stop2(26)
+           endif
+           if (cliptracers)  where (ug3d < clip) ug3d = clip
+           do k=1,nlevs
+              ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(ql_ind-1)+k,nb,ne))
+           enddo
+        endif
+        if (qi_ind > 0) then
+           call read_vardata(dset, 'icmr', ug3d,errcode=iret)
            if (iret /= 0) then
               print *,'error reading icmr'
-              call stop2(28)
+              call stop2(26)
            endif
-           if (cw_ind > 0) then
-              ug3d = ug3d + vg3d
-           else
-              if (cliptracers)  where (vg3d < clip) vg3d = clip
-              do k=1,nlevs
-                 vg = reshape(vg3d(:,:,nlevs-k+1),(/nlons*nlats/))
-                 call copytogrdin(vg,grdin(:,levels(qi_ind-1)+k,nb,ne))
-              enddo
+           if (cliptracers)  where (ug3d < clip) ug3d = clip
+           do k=1,nlevs
+              ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(qi_ind-1)+k,nb,ne))
+           enddo
+        endif
+        if (qr_ind > 0) then
+           call read_vardata(dset, 'rwmr', ug3d,errcode=iret)
+           if (iret /= 0) then
+              print *,'error reading rwmr'
+              call stop2(26)
            endif
+           if (cliptracers)  where (ug3d < clip) ug3d = clip
+           do k=1,nlevs
+              ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(qr_ind-1)+k,nb,ne))
+           enddo
         endif
-        if (cliptracers)  where (ug3d < clip) ug3d = clip
-        do k=1,nlevs
-           ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
-           call copytogrdin(ug,cw(:,k))
-           if (cw_ind > 0) then
-              grdin(:,levels(cw_ind-1)+k,nb,ne) = cw(:,k)
-           else
-              grdin(:,levels(ql_ind-1)+k,nb,ne) = cw(:,k)
+        if (qs_ind > 0) then
+           call read_vardata(dset, 'snmr', ug3d,errcode=iret)
+           if (iret /= 0) then
+              print *,'error reading snmr'
+              call stop2(26)
            endif
-        enddo
-     endif
-     if (qr_ind > 0) then
-        call read_vardata(dset, 'rwmr', ug3d,errcode=iret)
-        if (iret /= 0) then
-           print *,'error reading rwmr'
-           call stop2(26)
+           if (cliptracers)  where (ug3d < clip) ug3d = clip
+           do k=1,nlevs
+              ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(qs_ind-1)+k,nb,ne))
+           enddo
         endif
-        if (cliptracers)  where (ug3d < clip) ug3d = clip
-        do k=1,nlevs
-           ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
-           call copytogrdin(ug,grdin(:,levels(qr_ind-1)+k,nb,ne))
-        enddo
-     endif
-     if (qs_ind > 0) then
-        call read_vardata(dset, 'snmr', ug3d,errcode=iret)
-        if (iret /= 0) then
-           print *,'error reading snmr'
-           call stop2(26)
+        if (qg_ind > 0) then
+           call read_vardata(dset, 'grle', ug3d,errcode=iret)
+           if (iret /= 0) then
+              print *,'error reading grle'
+              call stop2(26)
+           endif
+           if (cliptracers)  where (ug3d < clip) ug3d = clip
+           do k=1,nlevs
+              ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
+              call copytogrdin(ug,grdin(:,levels(qg_ind-1)+k,nb,ne))
+           enddo
         endif
-        if (cliptracers)  where (ug3d < clip) ug3d = clip
-        do k=1,nlevs
-           ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
-           call copytogrdin(ug,grdin(:,levels(qs_ind-1)+k,nb,ne))
-        enddo
      endif
-     if (qg_ind > 0) then
-        call read_vardata(dset, 'grle', ug3d,errcode=iret)
-        if (iret /= 0) then
-           print *,'error reading grle'
-           call stop2(26)
-        endif
-        if (cliptracers)  where (ug3d < clip) ug3d = clip
-        do k=1,nlevs
-           ug = reshape(ug3d(:,:,nlevs-k+1),(/nlons*nlats/))
-           call copytogrdin(ug,grdin(:,levels(qg_ind-1)+k,nb,ne))
-        enddo
-     endif
+
      deallocate(ug3d,vg3d)
   else
 !$omp parallel do private(k,ug,vg,divspec,vrtspec)  shared(sigdata,pressi,vmassdiv,grdin,tv,q,cw,u_ind,v_ind,pst_ind,q_ind,tsen_ind,cw_ind,qi_ind,ql_ind)
