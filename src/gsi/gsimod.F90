@@ -619,17 +619,18 @@
 !                     crtm_overlap = 4, Average overlap
 !                     crtm_overlap = 5, Overcase overlap
 !     rewopt        - Options to compute cloud water effective radius
-!                     = 1, martin et al., 1994
-!                     = 2, martin et al., 1994, gfdl revision
-!                     = 3, martin et al., 1994, emc version
-!                     = 4, kiehl et al., 1994
-!                     = 5, kiehl, 1994
+!                   1: Martin et al. (1994)
+!                   2: Martin et al. (1994), GFDL revision
+!                   3: Kiehl et al. (1994)
+!                   4: effective radius
 !     reiopt        - Options to compute cloud ice effective radius
-!                     = 1, heymsfield and mcfarquhar, 1996
-!                     = 2, donner et al., 1997
-!                     = 3, fu, 2007
-!                     = 4, kristjansson et al., 2000
-!                     = 5, wyser, 1998
+!                     = 1, Heymsfield and Mcfarquhar, 1996
+!                     = 2, Donner et al., 1997
+!                     = 3, Fu, 2007
+!                     = 4, Kristjansson et al., 2000
+!                     = 5, Wyser, 1998
+!                     = 6: Sun and Rikus (1999), Sun (2001)
+!                     = 7: effective radius
 !     print_diag_pcg - logical turn on of printing of GMAO diagnostics in pcgsoi.f90
 !     preserve_restart_date - if true, then do not update regional restart file date.
 !     tsensible - option to use sensible temperature as the analysis variable. works

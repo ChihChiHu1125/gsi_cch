@@ -322,8 +322,8 @@ contains
     gmi_method = 0        ! 4= default gmi smoothing method
     amsr2_method = 0      ! 5= default amsr2 smoothing method
     crtm_overlap = 4      ! 4= Average overlap, 5 = overcast
-    rewopt = 0            ! Option to compute cloud water effective radius
-    reiopt = 0            ! Option to compute cloud ice effective radius
+    rewopt = 4            ! Option to compute cloud water effective radius
+    reiopt = 7            ! Option to compute cloud ice effective radius
     allsky_gfdl = .false. ! .true.= use gfdl all sky configuration
     cloud_mask_option = 0 ! 0= precipitation, 1= all-hydrometeors
     mask_threshold = 0.000001_r_kind
