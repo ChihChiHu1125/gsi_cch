@@ -1373,20 +1373,20 @@ contains
 
 !       screen out observations with normalized (by symmetric error) FG
 !       departure > 2.5
-!        if(radmod%lcloud_fwd .and. radmod%ex_obserr=='ex_obserr1' .and. &
-!           eff_area .and. allsky_gfdl) then
-!           do i=1,nchanl
-!              if (abs(tbc(i)) > error0(i)*2.5_r_kind) then
-!                 if (amsua .and. (i <= 6 .or. i == 15)) then
-!                     varinv(i)=zero
-!                     id_qc(i) = ifail_outside_symnorm
-!                 else if (atms .and. (i <= 7 .or. i >= 16)) then
-!                     varinv(i)=zero
-!                     id_qc(i) = ifail_outside_symnorm
-!                 end if
-!              endif
-!           end do
-!        endif
+        if(radmod%lcloud_fwd .and. radmod%ex_obserr=='ex_obserr1' .and. &
+           eff_area .and. allsky_gfdl) then
+           do i=1,nchanl
+              if (abs(tbc(i)) > error0(i)*2.5_r_kind) then
+                 if (amsua .and. (i <= 6 .or. i == 15)) then
+                     varinv(i)=zero
+                     id_qc(i) = ifail_outside_symnorm
+                 else if (atms .and. (i <= 7 .or. i >= 16)) then
+                     varinv(i)=zero
+                     id_qc(i) = ifail_outside_symnorm
+                 end if
+              endif
+           end do
+        endif
 
         do i=1,nchanl
            mm=ich(i)
@@ -1695,13 +1695,13 @@ contains
               m=ich(i)
               if(radmod%lcloud_fwd .and. eff_area) then
                  if(radmod%rtype == 'amsua' .and. (i <=5 .or. i==15) ) then 
-                    if (radmod%lprecip) then
+                    if (radmod%lprecip .and. .not. allsky_gfdl) then
                        errf(i) = 2.5_r_kind*errf(i)
                     else
                        errf(i) = three*errf(i)
                     endif
                  else if(radmod%rtype == 'atms' .and. (i <= 6 .or. i>=16) ) then
-                    if (radmod%lprecip) then
+                    if (radmod%lprecip .and. .not. allsky_gfdl) then
                        errf(i) = min(2.5_r_kind*errf(i),10.0_r_kind)
                     else
                        errf(i) = min(three*errf(i),10.0_r_kind)
@@ -2473,17 +2473,10 @@ contains
               diagbuf(29) = r_missing
               diagbuf(30) = r_missing
            else
-              if(radmod%lcloud_fwd .and. sea) then
-                 diagbuf(27) = ciw_guess
-                 diagbuf(28) = rain_guess
-                 diagbuf(29) = snow_guess
-                 diagbuf(30) = graupel_guess
-              else
-                 diagbuf(27) = data_s(itref,n)
-                 diagbuf(28) = data_s(idtw,n)
-                 diagbuf(29) = data_s(idtc,n)
-                 diagbuf(30) = data_s(itz_tr,n)
-              end if
+              diagbuf(27) = data_s(itref,n)
+              diagbuf(28) = data_s(idtw,n)
+              diagbuf(29) = data_s(idtc,n)
+              diagbuf(30) = data_s(itz_tr,n)
            endif
 
            if (lwrite_peakwt) then
@@ -2726,10 +2719,10 @@ contains
                        call nc_diag_metadata("snow_guess",     sngl(snow_guess))
                        call nc_diag_metadata("graupel_guess",  sngl(graupel_guess))
                     else
-                       call nc_diag_metadata("ciw_guess", sngl(missing))
-                       call nc_diag_metadata("rain_guess", sngl(missing))
-                       call nc_diag_metadata("snow_guess", sngl(missing))
-                       call nc_diag_metadata("graupel_guess", sngl(missing))
+                       call nc_diag_metadata("ciw_guess",      sngl(missing))
+                       call nc_diag_metadata("rain_guess",     sngl(missing))
+                       call nc_diag_metadata("snow_guess",     sngl(missing))
+                       call nc_diag_metadata("graupel_guess",  sngl(missing))
                     endif
                  endif
 
@@ -2755,7 +2748,7 @@ contains
                     if (allsky_verbose) &
                     call nc_diag_metadata("Cloud_Effect",                       sngl(cldeff_obs(ich_diag(i))) ) ! cloud effect w BC
                     if (crtm_overlap < 5) &
-                    call nc_diag_metadata("Total_Cloud_Cover",               sngl(tcc(ich_diag(i)))      )  ! total cloud cover
+                    call nc_diag_metadata("Total_Cloud_Cover",                  sngl(tcc(ich_diag(i)))      )  ! total cloud cover
                  endif
 
                  if (save_jacobian .and. allocated(idnames)) then

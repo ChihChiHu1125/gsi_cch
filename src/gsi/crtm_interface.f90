@@ -1104,7 +1104,7 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
   use gridmod, only: istart,jstart,nlon,nlat,lon1,rlats,rlons,dlnpm_ratio
   use wrf_params_mod, only: cold_start
   use constants, only: zero,half,one,one_tenth,r0_05,r10,r100,r1000,constoz,grav,rad2deg, &
-      sqrt_tiny_r_kind,constoz,two,three,four,five,t0c,rd,eps,rd_over_cp,rearth,fv
+      sqrt_tiny_r_kind,constoz,two,three,four,five,t0c,rd,eps,rd_over_cp,rearth
   use constants, only: max_varname_length,pi  
   use set_crtm_aerosolmod, only: set_crtm_aerosol,set_crtm_aerosol_fv3_cmaq_regional
   use set_crtm_cloudmod, only: set_crtm_cloud
@@ -1161,7 +1161,6 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
       reshape((/0.0_r_kind, 1.0_r_kind, 1.0_r_kind, 2.0_r_kind, 1.0_r_kind, &
                -1.0_r_kind, 1.0_r_kind, -1.0_r_kind/), (/4, 2/))
   real(r_kind),parameter:: jac_pert = 1.0_r_kind
-  real(r_double),parameter :: one_r8 = 1.0_r_double
 
 ! Declare local variables  
   integer(i_kind):: iquadrant  
@@ -1202,7 +1201,6 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
   real(r_kind),dimension(5)     :: tmp_time
   real(r_kind),dimension(0:3)   :: dtskin
   real(r_kind),dimension(msig)  :: c6
-  real(r_kind),dimension(msig)  :: delz
   real(r_kind),dimension(nsig)  :: c3
   real(r_kind),dimension(nsig)  :: dp   ! delp (Pa)
   real(r_kind),dimension(nsig)  :: plyr ! layer mean pressure (Pa)
@@ -1779,7 +1777,7 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
             ges_qsat (ixp,iy ,k, itsigp)*w10+ &
             ges_qsat (ix ,iyp,k, itsigp)*w01+ &
             ges_qsat (ixp,iyp,k, itsigp)*w11)*dtsigp
-     c3(k)=r1000/(one_r8-q(k))
+     c3(k)=r1000/(one-q(k))
      qmix(k)=q(k)*c3(k)  !convert specific humidity to mixing ratio
 ! Space-time interpolation of ozone(poz)
      if (iozs==0) then
@@ -1864,7 +1862,7 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
             end if
         end do  
         if (allsky_gfdl) then
-           c3(k)=r1000/(one_r8-q(k)-q_cond(k))
+           c3(k)=r1000/(one-q(k)-q_cond(k))
            qmix(k)=q(k)*c3(k)  !conver specific humidity to mixing ratio
         endif
      endif ! <n_clouds_fwd_wk>
@@ -1881,8 +1879,8 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
               ges_prsi(ixp,iyp,nsig+1,itsigp)*w11)*dtsigp
 
   do k=1,nsig
-     dp(k) = abs(prsi(k)-prsi(k+1))*r1000
-     plyr(k) = dp(k) / log(prsi(k))-log(prsi(k+1))
+     dp(k) = (prsi(k)-prsi(k+1))*r1000  ! in Pa
+     plyr(k) = dp(k) / (log(prsi(k))-log(prsi(k+1)))
   enddo
 
   ! Calculate GFDL effective radius for each hydrometeor
@@ -1894,7 +1892,7 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
   endif
 
   ! Calculate GFDL cloud fraction (if no cf in metguess table) based on PDF scheme 
-  if ( icmask .and. n_clouds_fwd_wk > 0 .and. imp_physics==11 .and. lprecip_wk .and. lcalc_gfdl_cfrac) then
+  if ( icmask .and. n_clouds_fwd_wk > 0 .and. imp_physics==11 .and.  lprecip_wk ) then
      cf_calc  = zero
      if (allsky_gfdl) then
         call compute_cloud_fraction(garea,q,qs,plyr,hs,cf_calc)
@@ -1904,8 +1902,6 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
      cf   = cf_calc
      icfs = 0        ! load cloud fraction into CRTM 
   endif
-
-  if (icfs /= 0) options(1)%overlap_id = 5
 
   ! Calculate GFDL effective radius for each hydrometeor
   if ( icmask .and. n_clouds_fwd_wk > 0 .and. imp_physics==11 .and. lprecip_wk .and. allsky_gfdl ) then
@@ -2132,22 +2128,16 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
                  if (ii==2 .and. atmosphere(1)%temperature(k)<t0c) &
                     cloud_cont(k,2)=max(1.001_r_kind*1.0E-6_r_kind, cloud_cont(k,2))
               end do
-              if (.not. regional .and. icfs==0 ) atmosphere(1)%cloud_fraction(k) = cf(kk2)
-              do ii=1,2
-                 if(cloud_cont(k,ii) > 1.000_r_kind*1.0E-6_r_kind .and. atmosphere(1)%cloud_fraction(k) < 1.001_r_kind*1.0E-12_r_kind) then
-                   atmosphere(1)%cloud_fraction(k)=1.001_r_kind*1.0E-12_r_kind
-                 end if
-              end do
           endif   
         else 
            if (icmask) then
               if (allsky_gfdl) then
                  ! c6: dry air mass, level_pressure computed from surface pressure with hydrometeors excluded
-                 c6(k) = kgkg_kgm2 * (one_r8-q(kk2))
+                 c6(k) = kgkg_kgm2 * (one-q(kk2))
               endif
               do ii=1,n_clouds_fwd_wk
                  if (allsky_gfdl) then
-                    ! water content = dp * qxz / g (dp: dry air mass, qxz: mixing ratio = q * c3
+                    ! water content = dp * qxz / g (dp: dry air mass, qxz: mixing ratio = q * c3)
                     cloud_cont(k,ii)=cloud(kk2,ii)*c3(kk2)*c6(k)*0.001_r_kind
                  else
                     cloud_cont(k,ii)=cloud(kk2,ii)*c6(k)
@@ -2177,11 +2167,6 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
                 !Add lower bound to all hydrometers 
                 !note: may want to add lower bound value for effective radius  
               do ii=1,n_clouds_fwd_wk
-                 if (trim(cloud_names_fwd(ii))=='ql') clw_guess=hwp_guess(ii)
-                 if (trim(cloud_names_fwd(ii))=='qi') ciw_guess=hwp_guess(ii)
-                 if (trim(cloud_names_fwd(ii))=='qr') rain_guess=hwp_guess(ii)
-                 if (trim(cloud_names_fwd(ii))=='qs') snow_guess=hwp_guess(ii)
-                 if (trim(cloud_names_fwd(ii))=='qg') graupel_guess=hwp_guess(ii)
                  if (.not. allsky_gfdl) then 
                     if (trim(cloud_names_fwd(ii))=='ql' .and.  atmosphere(1)%temperature(k)-t0c>-20.0_r_kind) then
                         cloud_cont(k,ii)=max(1.001_r_kind*1.0E-6_r_kind, cloud_cont(k,ii))
@@ -2204,6 +2189,11 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
                         cloud_efr(k,ii)=max(5.001_r_kind, cloud_efr(k,ii))
                     endif
                  endif
+                 if (trim(cloud_names_fwd(ii))=='ql') clw_guess=hwp_guess(ii)
+                 if (trim(cloud_names_fwd(ii))=='qi') ciw_guess=hwp_guess(ii)
+                 if (trim(cloud_names_fwd(ii))=='qr') rain_guess=hwp_guess(ii)
+                 if (trim(cloud_names_fwd(ii))=='qs') snow_guess=hwp_guess(ii)
+                 if (trim(cloud_names_fwd(ii))=='qg') graupel_guess=hwp_guess(ii)
               end do
 !             In CRTM, if cloud fraction of the layer < 1.0E-12, set cloud content and
 !             effective radius of all hydrometer types in that layer to zero
@@ -2798,7 +2788,7 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
   logical :: hydrostatic
 
 !  parameters
-  icloud_f = 0
+  icloud_f = 1
   cv_vap   = 3.0_r_kind * rvgas ! heat capacity of water vapor at constant volume (non-hydrostatic) cv_vap=1384.5
   cp_vap   = 4.0_r_kind * rvgas ! heat capacity of water voiar at constant pressure (hydrostatic)   cp_vap=1846.0
   dw_land  = 0.20_r_kind        ! base value for subgrid variability over land
@@ -3362,9 +3352,9 @@ subroutine get_lai(data_s,nchanl,nreal,itime,ilate,lai_type,lai)
   implicit none
 
   real(r_kind), intent(in)        :: area               ! grid area [m^2]
-  real(r_kind), intent(in)        :: q(nsig)            ! specific humidty
+  real(r_kind), intent(in)        :: q(nsig)            ! specific humidty [kg/kg]
   real(r_kind), intent(in)        :: qsat(nsig)         ! saturated specific humidty
-  real(r_kind), intent(in)        :: plyr(nsig)         ! layer mean pressure
+  real(r_kind), intent(in)        :: plyr(nsig)         ! layer mean pressure [Pa]
   real(r_kind), intent(in)        :: zs                 ! surface height
   real(r_kind), intent(inout)     :: cloud_fraction(nsig)    ! cloud fraction
 
@@ -3504,8 +3494,8 @@ subroutine get_lai(data_s,nchanl,nreal,itime,ilate,lai_type,lai)
 
   implicit none
 
-  real(r_kind), intent(in), dimension(nsig) :: plyr ! model layer mean pressure in mb
-  real(r_kind), intent(in), dimension(nsig) :: dp ! mass (dry air + water vapor) mb
+  real(r_kind), intent(in), dimension(nsig) :: plyr ! model layer mean pressure in Pa
+  real(r_kind), intent(in), dimension(nsig) :: dp ! mass (dry air + water vapor) Pa
   real(r_kind), intent(in), dimension(nsig) :: t ! temperature (K)
   real(r_kind), intent(in), dimension(nsig) :: q ! specific humidity (kg/kg)
   real(r_kind), intent(in), dimension(nsig) :: cloud_fraction
@@ -3535,7 +3525,7 @@ subroutine get_lai(data_s,nchanl,nreal,itime,ilate,lai_type,lai)
   real(r_kind), parameter :: rewmax = 15.0_r_kind
   real(r_kind), parameter :: reimin = ten
   real(r_kind), parameter :: reimax = 150.0_r_kind
-  real(r_kind), parameter :: rermin = 15.0_r_kind
+  real(r_kind), parameter :: rermin = 10.0_r_kind
   real(r_kind), parameter :: rermax = 10000.0_r_kind
   real(r_kind), parameter :: resmin = 150.0_r_kind
   real(r_kind), parameter :: resmax = 10000.0_r_kind
@@ -3682,7 +3672,7 @@ subroutine get_lai(data_s,nchanl,nreal,itime,ilate,lai_type,lai)
      qmg = max(qmg, zero)
      cldf = min(max(cldf, zero), one)
 
-     dpg = dp(k) / grav
+     !dpg = dp(k) / grav
      rho = plyr(k) / (rdgas * t(k) * (one + fv * q(k)))
   
      ! original 
@@ -3986,46 +3976,5 @@ subroutine get_lai(data_s,nchanl,nreal,itime,ilate,lai_type,lai)
     ed = eda / edb * exp (1. / (mu + 3) * log (6 * den * q))
 
   end subroutine cal_ed
-
-  SUBROUTINE Geopotential_Height_delz( Level_Pressure,           &  ! Input
-                                       Temperature,              &  ! Input
-                                       Water_Vapor,              &  ! Input
-                                       k,                        &  ! input
-                                       delz)                        ! Output
-
-    use constants, only: one
-
-  ! Parameters used in the geopotential height calculation routines
-    real(r_kind), parameter :: MW_H2O = 18.01528_r_kind
-    real(r_kind), parameter :: MW_DRYAIR = 28.9648_r_kind
-    real(r_kind), parameter :: EPS = MW_H2O / MW_DRYAIR
-    real(r_kind), parameter :: G0 = 9.80665_r_kind
-    real(r_kind), parameter :: R0 = 8.314472_r_kind
-    real(r_kind), parameter :: G_TO_KG = 1.0e-03_r_kind
-    real(r_kind), parameter :: R_DRYAIR  = R0 / ( MW_DRYAIR * G_TO_KG )
-
-  ! a factor used in the virtual temperature Tv calculation
-    real(r_kind), parameter :: C = (one/EPS - one) / 1000.0_r_kind
-  ! a factor used in the scale height calculation ( H = CC*Tv)
-    real(r_kind), parameter :: CC = 0.001_r_kind*R_DRYAIR/G0
-
-   ! Arguments
-    real(r_kind), intent(in)  :: Level_Pressure(0:)
-    real(r_kind), intent(in)  :: Temperature(:)
-    real(r_kind), intent(in)  :: Water_Vapor(:)
-    integer(i_kind), intent(in)  :: k
-    real(r_kind), intent(out) :: delz(:)
-
-    ! Function result
-    real(r_kind) :: Tv, H
-
-    ! virtual temperature computed using an approximation of the exact
-    ! formula:
-    !  Tv = T*(1+w/epsilon)/(1+w), where w is the water vapor mixing ratio
-    Tv = Temperature(k)*(one + C*Water_Vapor(k))
-    H  = CC*Tv
-    delz(k) = H*LOG(Level_Pressure(k)/Level_Pressure(k-1))
-
-  END SUBROUTINE Geopotential_Height_delz
 
   end module crtm_interface
