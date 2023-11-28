@@ -789,6 +789,8 @@ subroutine get_convobs_data_nc(obspath, datestring, nobs_max, nobs_maxdiag,   &
               x_obs(nob)   = x_obs(nob) /Forecast_Saturation_Spec_Hum(i)
               hx_mean(nob)     = hx_mean(nob) /Forecast_Saturation_Spec_Hum(i)
               hx_mean_nobc(nob) = hx_mean_nobc(nob) /Forecast_Saturation_Spec_Hum(i)
+              if (neigv>0) &
+              hx_modens(:,nob) = hx_modens(:,nob) /Forecast_Saturation_Spec_Hum(i)
            endif
 
            ! for wind, also read v-component
@@ -1289,6 +1291,8 @@ subroutine get_convobs_data_bin(obspath, datestring, nobs_max, nobs_maxdiag,   &
              x_obs(nob)   = x_obs(nob) /rdiagbuf(20,n)
              hx_mean(nob)     = hx_mean(nob) /rdiagbuf(20,n)
              hx_mean_nobc(nob) = hx_mean_nobc(nob) /rdiagbuf(20,n)
+             if (neigv>0) &
+             hx_modens(:,nob) = hx_modens(:,nob) /rdiagbuf(20,n)
           endif
 
           ! for wind, also read v-component

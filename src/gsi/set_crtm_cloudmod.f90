@@ -10,7 +10,6 @@ module set_crtm_cloudmod
 !   2011-06-01  todling
 !   2011-11-17  zhu     --- merge set_crtm_cloudmod with crtm_cloud
 !   2018-05-19  eliu    --- add precipiation components (related to GFDL physics)
-!   2022-12-09  mtong   --- add capability to specify hydrometeor habit
 !
 ! subroutines included:
 !   sub Set_CRTM_Cloud
@@ -25,11 +24,7 @@ module set_crtm_cloudmod
   use constants, only: zero,one,two,five,r0_05,t0c,fv,rd,grav
   use CRTM_Cloud_Define, only: CRTM_Cloud_type
   use CRTM_Cloud_Define, only: WATER_CLOUD,ICE_CLOUD,RAIN_CLOUD, &
-      SNOW_CLOUD,GRAUPEL_CLOUD,HAIL_CLOUD,PlateType1,ColumnType1, &
-      SixBulletRosette,Perpendicular4_BulletRosette,Flat3_BulletRosette, &
-      IconCloudIce,SectorSnowflake,EvansSnowAggregate,EightColumnAggregate, &
-      LargePlateAggregate,LargeColumnAggregate,LargeBlockAggregate, &
-      IconSnow,IconHail,GemGraupel,GemSnow,GemHail,IceSphere,LiquidSphere 
+      SNOW_CLOUD,GRAUPEL_CLOUD,HAIL_CLOUD 
   use mpeu_util, only: die
   use mpimod, only: mype          
   use radiance_mod, only: cw_cv 
@@ -78,7 +73,6 @@ CONTAINS
 
   use gridmod, only: regional,wrf_mass_regional
   use wrf_params_mod, only: cold_start
-  use radinfo, only: hydrotype
   implicit none
 
 ! !ARGUMENTS:
@@ -125,7 +119,7 @@ CONTAINS
   if (cold_start .or. cw_cv) then                              
 !    Initialize Loop over clouds ...
      do n = 1, nc
-        Cloud(n)%Type = CloudType_(cloud_name(jcloud(n)),hydrotype)
+        Cloud(n)%Type = CloudType_(cloud_name(jcloud(n)))
         Cloud(n)%water_content(:) = zero
         cloud(n)%Effective_Radius(:) = zero
         cloud(n)%effective_variance(:) = two
@@ -187,7 +181,7 @@ CONTAINS
 
 !       Map Model cloud names into CRTM Cloud indices
 !       ---------------------------------------------
-        Cloud(n)%Type = CloudType_(cloud_name(jcloud(n)),hydrotype)
+        Cloud(n)%Type = CloudType_(cloud_name(jcloud(n)))
 
         if(icmask) then
            Cloud(n)%water_content(:) = cloud_cont(:,n)
@@ -226,56 +220,24 @@ CONTAINS
   endif 
   end subroutine setCloud
 
-  function CloudType_(name,hydrotype) Result(ctype)
+  function CloudType_(name) Result(ctype)
     character(len=*), parameter :: myname = 'CloudType_'
     character(len=*) :: name  ! Model cloud name
-    character(len=*) :: hydrotype(6)
     integer(i_kind)  :: ctype ! CRTM cloud type
 
     if ( trim(name) == 'ql' ) then
-       SELECT CASE (hydrotype(1))
-         CASE('WATER_CLOUD'); ctype = WATER_CLOUD
-         CASE('LiquidSphere'); ctype = LiquidSphere  
-       END SELECT
+       ctype = WATER_CLOUD
     else if ( trim(name) == 'qi' ) then
-       SELECT CASE (hydrotype(2))
-         CASE('ICE_CLOUD'); ctype = ICE_CLOUD
-         CASE('IceSphere'); ctype = IceSphere
-       END SELECT
+       ctype = ICE_CLOUD
     else if ( trim(name) == 'qh' ) then
-       SELECT CASE (hydrotype(6))
-         CASE('HAIL_CLOUD'); ctype = HAIL_CLOUD
-         CASE('GemHail'); ctype = GemHail
-         CASE('IconHail'); ctype = IconHail
-       END SELECT
+       ctype = HAIL_CLOUD
     else if ( trim(name) == 'qg' ) then
-       SELECT CASE (hydrotype(5))
-         CASE('GRAUPEL_CLOUD'); ctype = GRAUPEL_CLOUD
-         CASE('GemGraupel'); ctype = GemGraupel
-       END SELECT
+       ctype = GRAUPEL_CLOUD
     else if ( trim(name) == 'qr' ) then
-       SELECT CASE (hydrotype(3))
-         CASE('RAIN_CLOUD'); ctype = RAIN_CLOUD
-         CASE('LiquidSphere'); ctype = LiquidSphere
-       END SELECT
+       ctype = RAIN_CLOUD
     else if ( trim(name) == 'qs' ) then
-       SELECT CASE (hydrotype(4))
-         CASE('SNOW_CLOUD'); ctype = SNOW_CLOUD
-         CASE('PlateType1'); ctype = PlateType1
-         CASE('ColumnType1'); ctype = ColumnType1
-         CASE('SixBulletRosette'); ctype = SixBulletRosette
-         CASE('Perpendicular4_BulletRosette'); ctype = Perpendicular4_BulletRosette
-         CASE('Flat3_BulletRosette'); ctype = Flat3_BulletRosette
-         CASE('SectorSnowflake'); ctype = SectorSnowflake
-         CASE('EvansSnowAggregate'); ctype = EvansSnowAggregate
-         CASE('EightColumnAggregate'); ctype = EightColumnAggregate
-         CASE('LargePlateAggregate'); ctype = LargePlateAggregate
-         CASE('LargeColumnAggregate'); ctype = LargeColumnAggregate
-         CASE('LargeBlockAggregate'); ctype = LargeBlockAggregate
-         CASE('IconSnow'); ctype = IconSnow
-         CASE('GemSnow'); ctype = GemSnow
-         CASE('IconCloudIce'); ctype = IconCloudIce
-       END SELECT
+       ctype = SNOW_CLOUD
+
     else
        call die(myname,"cannot recognize cloud name <"//trim(name)//">")
     end if

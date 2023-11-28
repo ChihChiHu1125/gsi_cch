@@ -2,6 +2,23 @@
 
 set -eu
 
+while getopts "r" option;
+do
+ case $option in
+  r)
+   echo "Recieved -r flag, will recompile without clean"
+   export BUILD_CLEAN="NO"
+   ;;
+  :)
+   echo "option -$OPTARG needs an argument"
+   ;;
+  *)
+   echo "invalid option -$OPTARG, exiting..."
+   exit
+   ;;
+ esac
+done
+
 # Get the root of the cloned GSI directory
 readonly DIR_ROOT=$(cd "$(dirname "$(readlink -f -n "${BASH_SOURCE[0]}" )" )/.." && pwd -P)
 
@@ -43,8 +60,8 @@ elif [[ $MACHINE_ID = hera.intel ]] ; then
     CONTROLPATH="/scratch1/NCEPDEV/da/Michael.Lueken/svn1/install/bin"
     #export CRTM_LIB=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/REL-2.4.0/crtm_v2.4.0/lib/libcrtm.a
     #export CRTM_INC=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/REL-2.4.0/crtm_v2.4.0/include
-    export CRTM_LIB=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/crtm_im/crtm_im/lib64/libcrtm_static.a
-    export CRTM_INC=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/crtm_im/crtm_im/module/crtm/Intel/19.1.2.20200623
+    #export CRTM_LIB=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/crtm_im/crtm_im/lib64/libcrtm_static.a
+    #export CRTM_INC=/scratch2/GFDL/gfdlscr/Mingjing.Tong/CRTM/crtm_im/crtm_im/module/crtm/Intel/19.1.2.20200623
 fi
 
 # Collect BUILD Options
@@ -60,12 +77,18 @@ CMAKE_OPTS+=" -DGSI_MODE=$GSI_MODE -DENKF_MODE=${ENKF_MODE}"
 [[ ${REGRESSION_TESTS} =~ [yYtT] ]] && CMAKE_OPTS+=" -DBUILD_REG_TESTING=ON -DCONTROLPATH=${CONTROLPATH:-}"
 
 # Re-use or create a new BUILD_DIR (Default: create new BUILD_DIR)
-[[ ${BUILD_CLEAN:-"YES"} =~ [yYtT] ]] && rm -rf $BUILD_DIR
-mkdir -p $BUILD_DIR && cd $BUILD_DIR
+if [[ ${BUILD_CLEAN:-"YES"} =~ [yYtT] ]] ; then
+   rm -rf $BUILD_DIR
+   mkdir -p $BUILD_DIR && cd $BUILD_DIR
+fi
 
 # Configure, build, install
 set -x
-cmake $CMAKE_OPTS $DIR_ROOT
+if [[ ${BUILD_CLEAN:-"YES"} =~ [yYtT] ]] ; then
+   cmake $CMAKE_OPTS $DIR_ROOT
+else
+   cd $BUILD_DIR
+fi
 make -j ${BUILD_JOBS:-8} VERBOSE=${BUILD_VERBOSE:-}
 make install
 set +x
