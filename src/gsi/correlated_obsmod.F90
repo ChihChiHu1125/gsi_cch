@@ -390,7 +390,8 @@ logical :: corr_obs
 
    if (corr_obs) then
       lu = luavail()
-      open(lu,file=trim(fname),convert='little_endian',form='unformatted')
+      !open(lu,file=trim(fname),convert='little_endian',form='unformatted')
+      open(lu,file=trim(fname),form='unformatted')
       if (GMAO_ObsErrorCov) then
          read(lu,IOSTAT=ioflag) nch_active, iprec
       else
