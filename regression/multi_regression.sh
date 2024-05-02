@@ -1,43 +1,20 @@
 #!/bin/sh --login
 
-regtests_all="global_T62
-              global_T62_ozonly
-              global_4dvar_T62
-              global_4denvar_T126
-              global_fv3_4denvar_T126
-              global_fv3_4denvar_C192
-              global_lanczos_T62
-              arw_netcdf
-              arw_binary
-              nmm_binary
-              nmm_netcdf
-              nmmb_nems_4denvar
+regtests_all="global_4denvar
               netcdf_fv3_regional
-              hwrf_nmm_d2
-              hwrf_nmm_d3
+              rrfs_3denvar_glbens
+              hafs_4denvar_glbens
+              hafs_3denvar_hybens
               rtma
-              global_enkf_T62
-              global_C96_fv3aero
-              global_C96_fv3aerorad"
+              global_enkf"
 
-regtests_debug="global_T62
-                global_4dvar_T62
-                global_4denvar_T126
-                global_fv3_4denvar_T126
-                global_fv3_4denvar_C192
-                global_lanczos_T62
-                arw_netcdf
-                arw_binary
-                nmm_binary
-                nmm_netcdf
-                nmmb_nems_4denvar
+regtests_debug="global_4denvar
                 netcdf_fv3_regional
-                hwrf_nmm_d2
-                hwrf_nmm_d3
+                rrfs_3denvar_glbens
+                hafs_4denvar_glbens
+                hafs_3denvar_hybens
                 rtma
-                global_enkf_T62
-                global_C96_fv3aero
-                global_C96_fv3aerorad"
+                global_enkf"
 
 # Choose which regression test to run; by default, run all
 regtests=${1:-$regtests_all}
