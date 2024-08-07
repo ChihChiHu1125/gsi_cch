@@ -62,6 +62,10 @@ type sparr2
    integer(i_kind), dimension(:), allocatable :: st_ind      ! start indices for dense subarrays
    integer(i_kind), dimension(:), allocatable :: end_ind     ! end indices for dense subarrays
    real(r_kind), dimension(:), allocatable    :: val         ! values of non-zero elements
+
+! CCH: add the name of the physical variables:
+!   character(len=20),dimension(:), allocatable :: varname    ! the name for each subarrays (should be radjacnames)
+
 end type sparr2
 
 ! interfaces
@@ -118,8 +122,11 @@ subroutine init_sparr2(this, nnz, nind)
   if (allocated(this%st_ind))   deallocate(this%st_ind)
   if (allocated(this%end_ind))  deallocate(this%end_ind)
   if (allocated(this%val))      deallocate(this%val)
+! CCH:
+!  if (allocated(this%varname))  deallocate(this%varname)
 
   allocate(this%st_ind(nind), this%end_ind(nind), this%val(nnz))
+!  allocate(this%st_ind(nind), this%end_ind(nind), this%val(nnz), this%varname(nind))
 
 end subroutine init_sparr2
 
@@ -219,6 +226,9 @@ subroutine cleanup_sparr2(this)
   if (allocated(this%st_ind))   deallocate(this%st_ind)
   if (allocated(this%end_ind))  deallocate(this%end_ind)
   if (allocated(this%val))      deallocate(this%val)
+! CCH:
+!  if (allocated(this%varname))  deallocate(this%varname)
+
   this%nnz  = 0
   this%nind = 0
 end subroutine cleanup_sparr2

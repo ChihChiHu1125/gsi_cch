@@ -158,6 +158,11 @@ module qcmod
   use radinfo, only: iuse_rad,passive_bc,nuchan
   use radinfo, only: tzr_qc
   use radiance_mod, only: rad_obs_type
+
+! CCH
+  use mpimod, only: mype
+  use radinfo, only: situ_oberr_infla_all, situ_oberr_infla_only_scatter_wind, channel_sensitivity_test
+
   implicit none
 
 ! set default to private
@@ -3134,9 +3139,15 @@ subroutine qc_amsua(nchanl,is,ndat,nsig,npred,sea,land,ice,snow,mixed,luse,   &
   logical qc4emiss
   logical eff_area
 
+
   integer(i_kind) :: ich238, ich314, ich503, ich528, ich536 ! set chan indices
   integer(i_kind) :: ich544, ich549, ich890                 ! for amsua/atms
-  logical         :: latms, latms_surfaceqc
+  logical         :: latms, lamsua, latms_surfaceqc
+
+! CCH: local variables for the channel sensitivity test
+  logical :: original_test, noinf_this_channel
+  integer(i_kind) :: skip_inflation_channel_amsua(15), skip_inflation_channel_atms(15) 
+  integer(i_kind) :: noinf_channels(15)
 
 
   if (nchanl == 22) then
@@ -3150,6 +3161,7 @@ subroutine qc_amsua(nchanl,is,ndat,nsig,npred,sea,land,ice,snow,mixed,luse,   &
       ich549 =  8
       ich890 = 16
   else
+      lamsua = .true.
       latms = .false.   ! If \= 16 channels (should be 15), it's amsua  
       ich238 =  1
       ich314 =  2
@@ -3202,10 +3214,11 @@ subroutine qc_amsua(nchanl,is,ndat,nsig,npred,sea,land,ice,snow,mixed,luse,   &
 
 ! QC6 in statsrad
   if(clwx >= one .and. luse)aivals(13,is) = aivals(13,is) + one
-  factch4=clwx**2+(tbc(ich528)*w2f4)**2
+  factch4=clwx**2+(tbc(ich528)*w2f4)**2 ! factch4: for thick clouds if factch4>0.5
+
 ! QC7 in statsrad
   if(dsval >= one .and. luse)aivals(14,is) = aivals(14,is) + one
-  factch6=dsval**2+(tbc(ich544)*w2f6)**2
+  factch6=dsval**2+(tbc(ich544)*w2f6)**2 ! factch6: for precipitation if factch6>1.0
 
 ! For this conservative initial implementation of ATMS, we will not
 ! use surface channels over
@@ -3214,6 +3227,10 @@ subroutine qc_amsua(nchanl,is,ndat,nsig,npred,sea,land,ice,snow,mixed,luse,   &
 !                  available for ATMS).
   latms_surfaceqc = (latms .AND. .NOT.(sea .OR. land))
 
+
+  ! CCH
+  !if (.not.radmod%lcloud_fwd) write(6,*) 'in qcmod (amsua), radmod%lcloud_fwd = false.'
+  !if (radmod%lprecip) write(6,*) 'in precipitation mode'
 
 ! If window channels are missing, skip the following QC and do not
 ! assimilate channels 1-6 & 15.
@@ -3309,8 +3326,11 @@ subroutine qc_amsua(nchanl,is,ndat,nsig,npred,sea,land,ice,snow,mixed,luse,   &
         else  !QC for data over open water
 !       calcalculate scattering index
 !       screen out channels 1 to 6, and 15 if channel 6 is affected by precipitation
-           ! for precipitating clouds
+
+! CCH: DA with precipitation mode
            if(radmod%lprecip) then
+              ! CCH: use AMSUA CH5/ ATMS CH6 cldeff ("cloud effect": TB-TB without
+              !      cloud) as a criterion to kick out deep convective clouds:
               if (cldeff_obs(ich536) < -0.50_r_kind .or. cldeff_fg(ich536) < -0.5_r_kind) then
                  efactmc=zero
                  vfactmc=zero
@@ -3643,28 +3663,147 @@ subroutine qc_amsua(nchanl,is,ndat,nsig,npred,sea,land,ice,snow,mixed,luse,   &
 ! Observation error adjustment for cloudy radiance based on mis-matched cloud, 
 ! diff_clw, scattering index, surface wind speed. The coefficient 13.0 for 
 ! clwtmp may be re-tuned with model physics changes. 
-  eff_area=.false.
-  if (radmod%lcloud_fwd) then
-     eff_area=(radmod%cld_sea_only .and. sea) .or. (.not. radmod%cld_sea_only)
-  end if
-  if (radmod%lcloud_fwd .and. eff_area) then
-     icol=one
-     if (any(cld_rbc_idx==zero)) icol=zero
-     do i=1,nchanl
-        if(varinv(i)>tiny_r_kind .and. (i<=ich536 .or. i>=ich890))  then
-           ework = (1.0_r_kind-icol)*abs(tbc(i))
-           ework = ework+min(0.002_r_kind*sfc_speed**2*error0(i), 0.5_r_kind*error0(i))
-           clwtmp=min(abs(clwp_amsua-clw_guess_retrieval), one)
-           ework = ework+min(13.0_r_kind*clwtmp*error0(i), 3.5_r_kind*error0(i))
-           if (scatp>9.0_r_kind .and. nchanl==15) then
-              ework = ework+min(1.5_r_kind*(scatp-9.0_r_kind)*error0(i), 2.5_r_kind*error0(i))
-           end if
-           ework=ework**2
-           varinv(i)=varinv(i)/(one+varinv(i)*ework)
-        endif
-     end do
+
+! CCH: the channel sensitivity test
+original_test = .false.
+skip_inflation_channel_amsua = 0
+skip_inflation_channel_atms  = 0
+noinf_channels               = 0
+
+select case (trim(channel_sensitivity_test))
+   case ('amsua_1')
+      skip_inflation_channel_amsua(1)=1
+      skip_inflation_channel_atms(1) =1
+   case ('amsua_2')
+      skip_inflation_channel_amsua(1)=2
+      skip_inflation_channel_atms(1) =2
+   case ('amsua_3')
+      skip_inflation_channel_amsua(1)=3
+      skip_inflation_channel_atms(1) =3
+   case ('amsua_4')
+      skip_inflation_channel_amsua(1)=4
+      skip_inflation_channel_atms(1) =5
+   case ('amsua_5')
+      skip_inflation_channel_amsua(1)=5
+      skip_inflation_channel_atms(1) =6
+   case ('amsua_15')
+      skip_inflation_channel_amsua(1)=15
+      skip_inflation_channel_atms(1) =16
+   case ('atms_17')
+      skip_inflation_channel_atms(1) =17
+   case ('atms_18')
+      skip_inflation_channel_atms(1) =18
+   case ('atms_19')
+      skip_inflation_channel_atms(1) =19
+   case ('atms_20')
+      skip_inflation_channel_atms(1) =20
+   case ('atms_21')
+      skip_inflation_channel_atms(1) =21
+   case ('atms_22')
+      skip_inflation_channel_atms(1) =22
+   case ('surface_channels')
+      skip_inflation_channel_amsua(1:2)=(/1,2/)
+      skip_inflation_channel_atms(1:3) =(/1,2,15/)
+   case default
+      original_test = .true. ! skip the channel sensitivity test
+end select
+
+
+! CCH: original_test = true means not conduct the channel sensitivity test:
+if (original_test) then
+  ! CCH
+  ! only retain the situation-dependent error for scattering and wind speed
+  ! criteria in Zhu(2016)
+  if (situ_oberr_infla_only_scatter_wind ) then
+    eff_area=.false.
+    if (radmod%lcloud_fwd) then
+       eff_area=(radmod%cld_sea_only .and. sea) .or. (.not. radmod%cld_sea_only)
+    end if
+    if (radmod%lcloud_fwd .and. eff_area) then
+       icol=one
+       if (any(cld_rbc_idx==zero)) icol=zero
+       do i=1,nchanl
+          if(varinv(i)>tiny_r_kind .and. (i<=ich536 .or. i>=ich890))  then
+             !ework = (1.0_r_kind-icol)*abs(tbc(i))
+             ework = min(0.002_r_kind*sfc_speed**2*error0(i),0.5_r_kind*error0(i))
+             !clwtmp=min(abs(clwp_amsua-clw_guess_retrieval), one)
+             !ework = ework+min(13.0_r_kind*clwtmp*error0(i), 3.5_r_kind*error0(i))
+             if (scatp>9.0_r_kind .and. nchanl==15) then
+                ework = ework+min(1.5_r_kind*(scatp-9.0_r_kind)*error0(i),2.5_r_kind*error0(i))
+             end if
+             ework=ework**2
+             varinv(i)=varinv(i)/(one+varinv(i)*ework)
+          endif
+       end do
+    endif
   endif
 
+  ! CCH
+  ! all the situation-dependent error inflation in Zhu(2016)
+  if (situ_oberr_infla_all) then
+    eff_area=.false.
+    if (radmod%lcloud_fwd) then
+       eff_area=(radmod%cld_sea_only .and. sea) .or. (.not. radmod%cld_sea_only)
+    end if
+    if (radmod%lcloud_fwd .and. eff_area) then
+       icol=one
+       if (any(cld_rbc_idx==zero)) icol=zero
+       do i=1,nchanl
+          if(varinv(i)>tiny_r_kind .and. (i<=ich536 .or. i>=ich890))  then
+             ework = (1.0_r_kind-icol)*abs(tbc(i))
+             ework = ework+min(0.002_r_kind*sfc_speed**2*error0(i), 0.5_r_kind*error0(i))
+             clwtmp=min(abs(clwp_amsua-clw_guess_retrieval), one)
+             ework = ework+min(13.0_r_kind*clwtmp*error0(i), 3.5_r_kind*error0(i))
+             if (scatp>9.0_r_kind .and. nchanl==15) then
+                ework = ework+min(1.5_r_kind*(scatp-9.0_r_kind)*error0(i), 2.5_r_kind*error0(i))
+             end if
+             ework=ework**2
+             varinv(i)=varinv(i)/(one+varinv(i)*ework)
+          endif
+       end do
+    endif 
+  endif ! end situ_oberr_infla_all
+
+else ! not original_test, the following block is used for the channel sensitivity test
+  
+   eff_area=.false.
+   if (radmod%lcloud_fwd) then
+      eff_area=(radmod%cld_sea_only .and. sea) .or. (.not. radmod%cld_sea_only)
+   end if
+   if (radmod%lcloud_fwd .and. eff_area) then
+      icol=one
+      if (any(cld_rbc_idx==zero)) icol=zero
+
+      if (lamsua) noinf_channels = skip_inflation_channel_amsua
+      if (latms)  noinf_channels = skip_inflation_channel_atms
+
+      do i=1,nchanl
+         noinf_this_channel = any( noinf_channels == i ) ! to see if applying SDOEI for channel i
+         if (mype==1) write(6,*) 'CCH /qcmod/ lamsua, channel, noinf_this_channel =', lamsua, i, noinf_this_channel
+
+         if(varinv(i)>tiny_r_kind .and. (i<=ich536 .or. i>=ich890))  then
+
+            if (noinf_this_channel) then  ! no additional cloud inflation applied to this channel
+               ework = min(0.002_r_kind*sfc_speed**2*error0(i),0.5_r_kind*error0(i))
+
+            else                          ! all the SDOEI are applied
+               ework = (1.0_r_kind-icol)*abs(tbc(i))
+               ework = ework + min(0.002_r_kind*sfc_speed**2*error0(i),0.5_r_kind*error0(i))
+               clwtmp=min(abs(clwp_amsua-clw_guess_retrieval), one)
+               ework = ework+min(13.0_r_kind*clwtmp*error0(i), 3.5_r_kind*error0(i))
+            endif
+
+            if (scatp>9.0_r_kind .and. nchanl==15) then ! the scatter inflation is applied to all
+               ework = ework+min(1.5_r_kind*(scatp-9.0_r_kind)*error0(i),2.5_r_kind*error0(i))
+            end if
+            ework=ework**2
+            varinv(i)=varinv(i)/(one+varinv(i)*ework)
+         endif
+      end do
+
+   endif
+
+endif ! end original_test
   return
 
 end subroutine qc_amsua

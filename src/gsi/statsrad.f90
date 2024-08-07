@@ -57,6 +57,8 @@ subroutine statsrad(aivals,stats,ndata)
   integer(i_kind) iobs2,i,j,is,iasim
   integer(i_kind) iland,isnoice,icoast,ireduce,ivarl,nlgross,nlgross_all
   integer(i_kind) icerr
+
+  integer(i_kind) gross_amsua
   
   real(r_kind) penalty_all,qcpenalty_all,rpenal,qcpenal
   real(r_kind) svar,rsum,stdev,cpen,qcpen
@@ -86,21 +88,36 @@ subroutine statsrad(aivals,stats,ndata)
         idisplay(is) = .true.
         if(iobs2 > 0)then
 
+           ! CCH: add radstat for AMSUA CH1-5&15 for the number of channels that
+           ! fail the gross error check
+
            nlgross = nint(aivals(2,is))
            iland   = nint(aivals(3,is))
            isnoice = nint(aivals(4,is))
            icoast  = nint(aivals(5,is))
            ireduce = nint(aivals(6,is))
            ivarl   = nint(aivals(7,is))
-           
+           gross_amsua = nint(aivals(36,is))
+
+           !write(iout_rad,4000) 'sat','type','penalty','nobs','iland', &
+           !     'isnoice','icoast','ireduce','ivarl','nlgross'
+           !write(iout_rad,4001) dplat(is),obstype,aivals(40,is), &
+           !      iobs2,iland,isnoice,icoast,ireduce,ivarl,nlgross
+
            write(iout_rad,4000) 'sat','type','penalty','nobs','iland', &
-                'isnoice','icoast','ireduce','ivarl','nlgross'
+                'isnoice','icoast','ireduce','ivarl','nlgross','gross_amsua'
            write(iout_rad,4001) dplat(is),obstype,aivals(40,is), &
-                 iobs2,iland,isnoice,icoast,ireduce,ivarl,nlgross
+                 iobs2,iland,isnoice,icoast,ireduce,ivarl,nlgross,gross_amsua
+
            write(iout_rad,4002) 'qcpenalty','qc1','qc2','qc3','qc4','qc5','qc6','qc7'    
            write(iout_rad,4003) aivals(39,is),(nint(aivals(i,is)),i=8,14)
-4000       format(2x,a3,7x,a4,14x,a7,1x,8(a7,1x))
-4001       format(1x,a10,1x,a10,f16.8,8(i7,1x))
+
+!4000       format(2x,a3,7x,a4,14x,a7,1x,8(a7,1x))
+!4001       format(1x,a10,1x,a10,f16.8,8(i7,1x))
+
+4000       format(2x,a3,7x,a4,14x,a7,1x,8(a7,1x),a11)
+4001       format(1x,a10,1x,a10,f16.8,8(i7,1x),i7)
+
 4002       format(28x,a9,1x,8(a7,1x))
 4003       format(22x,f16.8,8(i7,1x))
            

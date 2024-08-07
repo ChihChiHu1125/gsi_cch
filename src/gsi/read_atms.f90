@@ -92,6 +92,10 @@ subroutine read_atms(mype,val_tovs,ithin,isfcalc,&
   use mpimod, only: npe
   use radiance_mod, only: rad_obs_type
 
+! CCH:
+  use radinfo, only: every_5th_scan_atms
+
+
   implicit none
 
 ! Declare passed variables
@@ -543,6 +547,15 @@ subroutine read_atms(mype,val_tovs,ithin,isfcalc,&
      dlon_earth_deg = dlon_earth
      dlat_earth = dlat_earth*deg2rad
      dlon_earth = dlon_earth*deg2rad   
+
+
+! CCH:
+! Just use every fifth scan position and scanline (and make sure that we have
+! position 48 as we need it for scan bias)
+     if (every_5th_scan_atms) then
+        if (5*NINT(REAL(IScan(Iob))/5_r_kind) /= IScan(IOb) .OR. &
+            5*NINT(REAL(IFov-3)/5_r_kind) /= IFOV -3 ) CYCLE ObsLoop
+     endif
 
 !    Regional case
      if(regional)then

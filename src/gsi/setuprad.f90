@@ -239,7 +239,7 @@ contains
 !
 !$$$
 
-  use mpeu_util, only: die,perr,getindex
+  use mpeu_util, only: die,perr,getindex,tell
   use kinds, only: r_kind,r_single,i_kind
   use crtm_spccoeff, only: sc
   use radinfo, only: nuchan,tlapmean,predx,cbias,ermax_rad,tzr_qc,&
@@ -298,13 +298,23 @@ contains
   use qcmod, only: qc_gmi,qc_saphir,qc_amsr2
   use radinfo, only: iland_det, isnow_det, iwater_det, imix_det, iice_det, &
                       iomg_det, itopo_det, isst_det,iwndspeed_det, optconv
+! CCH
+  use radinfo, only: situ_oberr_infla_all, situ_oberr_infla_only_scatter_wind, &
+                     ng_error_amsua, ng_error_atms, io_cloud_bc_amsua, io_cloud_bc_atms, &
+                     io_ng_table_interp, predictor_amsua, predictor_atms, save_radjac_anyway
+
   use qcmod, only: setup_tzr_qc,ifail_scanedge_qc,ifail_outside_range
   use qcmod, only: iasi_cads, cris_cads
   use state_vectors, only: svars3d, levels, svars2d, ns3d
   use oneobmod, only: lsingleradob,obchan,oblat,oblon,oneob_type
   use correlated_obsmod, only: corr_adjust_jacobian, idnames
+
+! CCH
   use radiance_mod, only: rad_obs_type,radiance_obstype_search,radiance_ex_obserr,radiance_ex_biascor, &
-                          n_clouds_jac,cloud_names_jac
+                          n_clouds_jac,cloud_names_jac, &
+                          n_clouds_fwd,cloud_names_fwd, &
+                          radiance_ex_obserr_evolve_gauss, radiance_ex_obserr_evolve_gauss_interp
+
   use sparsearr, only: sparr2, new, writearray, size, fullarray
   use radiance_mod, only: radiance_ex_obserr_gmi,radiance_ex_biascor_gmi
   use cads, only: cads_imager_calc
@@ -446,6 +456,11 @@ contains
   real(r_single),dimension(msig,10):: atprofile
   real(r_single),dimension(nsig):: jactmp
 
+  ! CCH: if save_jacobian, also output surface wind (uu5, vv5) for diagnostic
+  !                                    surface wind Jacobian (u_jac, v_jac)
+  real(r_kind)                    :: u_in,  v_in
+  real(r_kind), dimension(nchanl) :: u_jac, v_jac
+
   integer(i_kind) :: icount,indx
   integer(i_kind),allocatable,dimension(:) :: icw
 
@@ -453,6 +468,9 @@ contains
   type(fptr_obsdiagNode),dimension(nchanl):: odiags
 
   logical:: muse_ii
+
+! CCH
+  integer(i_kind) :: amsua_ng_chanls(6), atms_ng_chanls(13)
 
 ! variables added for CADS
   real(r_kind),dimension(7,nobs)   :: imager_cluster_fraction
@@ -471,6 +489,15 @@ contains
   radhead => obsLL(:)
 
   save_jacobian = rad_diagsave .and. jiter==jiterstart .and. lobsdiag_forenkf
+
+  ! CCH: save the jacobian for amsua and atms
+  if (save_radjac_anyway) then
+     if ((obstype == 'amsua').or.(obstype == 'atms')) then
+         save_jacobian = .true.
+     endif
+  endif
+
+  !if (mype==0) print*, 'CCH / setuprad /  obstype, save_jacobian = ', obstype,  save_jacobian
 
   if (save_jacobian) then
      ijacob = 1 ! flag to indicate jacobian saved in diagnostic file
@@ -575,6 +602,7 @@ contains
         endif
 
         ich(jc)=j
+
         do i=1,npred
            predchan(i,jc)=predx(i,j)
         end do
@@ -593,6 +621,7 @@ contains
         if (passive_bc .and. (iuse_rad(j)==-1)) tnoise_cld(jc)=varch_cld(j)
      end if
   end do
+
 
   if(nchanl > jc) write(6,*)'SETUPRAD:  channel number reduced for ', &
      obstype,nchanl,' --> ',jc
@@ -823,6 +852,15 @@ contains
      if (allsky_verbose) call init_binary_jac_
   endif
 
+! Load data array for current satellite
+!  read(lunin) data_s,luse,ioid
+
+!  if (nobskeep>0) then
+!!    write(6,*)'setuprad: nobskeep',nobskeep
+!     call stop2(275)
+!  end if
+
+! CCH: a huge do-loop over all observations (index = n)
 ! PROCESSING OF SATELLITE DATA
 
 ! Loop over data in this block
@@ -876,6 +914,7 @@ contains
            eff_area=(radmod%cld_sea_only .and. sea) .or. (.not.  radmod%cld_sea_only)
         end if
 
+
         iinstr=-1
         if(allocated(idnames)) then
           if(sea)then
@@ -906,6 +945,7 @@ contains
            end if
         end if
 
+! CCH: what does this mean?
 !       Set relative weight value
         val_obs=one
         if(dval_use)then
@@ -951,15 +991,29 @@ contains
         atprofile=zero
         total_cloud_cover=zero
         if (radmod%lcloud_fwd) then
-          if (allsky_verbose) then
+
+          ! CCH: modify the criterion to store the Jacobian information:
+          ! note that jacobian is defined on the original model level (nsig),
+          ! and jacobian0 is defined on the crtm level (msig)
+
+          !if (allsky_verbose) then
+          if (save_jacobian) then
+
              call call_crtm(obstype,dtime,data_s(:,n),nchanl,nreal,ich, &
                   tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,graupel_guess, &
                   prsltmp,prsitmp,trop5,tzbgr,dtsavg,sfc_speed, &
                   tsim,emissivity,chan_level,ptau5,ts,emissivity_k, &
                   temp,wmix,jacobian,error_status,tsim_clr=tsim_clr,tcc=tcc, & 
                   tcwv=tcwv,hwp_ratio=hwp_ratio,stability=stability, &
-                  pcp_mask=pcp_mask,jacobian0=jacobian0,atprofile=atprofile)        
-   
+                  pcp_mask=pcp_mask,jacobian0=jacobian0,atprofile=atprofile, &
+                  u_in=u_in, v_in=v_in, u_jac=u_jac, v_jac=v_jac)        
+             
+             !if (mype==1) then
+             !        write(6,*), 'CCH: /setuprad/ n_clouds_jac, cloud_names_jac =', n_clouds_jac, cloud_names_jac
+             !        write(6,*), 'CCH: /setuprad/ n_clouds_fwd, cloud_names_fwd =', n_clouds_fwd, cloud_names_fwd
+             !endif
+
+
              if (pcp_mask) then
                 write(44)((atprofile(i,j),i=1,msig),j=1,10)
                 write(44)((jacobian0(i,j),i=1,msig*8),j=1,nchanl)
@@ -974,7 +1028,7 @@ contains
                    end do
                 end do
              end if
-          else
+          else        
              call call_crtm(obstype,dtime,data_s(:,n),nchanl,nreal,ich, &
                   tvp,qvp,qs,clw_guess,ciw_guess,rain_guess,snow_guess,graupel_guess, &
                   prsltmp,prsitmp,trop5,tzbgr,dtsavg,sfc_speed, &
@@ -1041,6 +1095,11 @@ contains
              cosza2 = cos(data_s(ilzen_ang2,n))
           endif
         endif
+
+! CCH: print out radjacnames if saving rad jacobian:
+!        if ((save_jacobian).and.(n<6)) then
+!           if (mype==1) print*, 'CCH: /setuprad/ obstype, radjacnames = ', obstype, radjacnames(1:nvarjac)
+!        endif
 
 ! If the CRTM returns an error flag, do not assimilate any channels for this ob 
 ! and set the QC flag to ifail_crtm_qc.
@@ -1387,14 +1446,84 @@ contains
 !       Assign observation error for all-sky radiances 
         if (radmod%lcloud_fwd .and. eff_area)  then
            if (radmod%ex_obserr=='ex_obserr1') then
-              call radiance_ex_obserr(radmod,nchanl,clw_obs,clw_guess_retrieval,tnoise,tnoise_cld,error0)
-           else if (radmod%ex_obserr=='ex_obserr3') then
-              call radiance_ex_obserr_gmi(radmod,nchanl,clw_obs,clw_guess_retrieval,tnoise,tnoise_cld,error0) 
-           end if
-        end if
 
+              ! CCH: do not change the original function
+                            
+              call radiance_ex_obserr(radmod,nchanl,clw_obs,clw_guess_retrieval,tnoise,tnoise_cld,error0)
+
+              !if (mype==150) write(6,*) 'before ng table: error0 = ', error0             
+ 
+              ! overwrite the error for selected non-gaussian channels using the
+              ! new subroutine:
+
+              if (ng_error_amsua .and. amsua) then
+                 !IF (mype==109) write(6,*) 'ich = ',ich
+
+                 !IF (mype==109) write(6,*) 'before changing the error: ', error0 
+                 !IF (mype==109) write(6,*) 'sym cld = ', 0.5*(clw_obs + clw_guess_retrieval)
+
+                 amsua_ng_chanls=[1,2,3,4,5,15]
+                 do i=1,nchanl
+                    if ( ANY(amsua_ng_chanls == i) ) then
+                       ! Note that the subroutine "radiance_ex_obserr_evolve_gauss" does not work over all channel
+                       ! instead, it works one channel by one channel:
+
+                       if ( io_ng_table_interp ) then  ! using interpolated values between cloud bins
+                          call radiance_ex_obserr_evolve_gauss_interp(radmod,i,tbc(i),clw_obs,clw_guess_retrieval, &
+                                                                      predictor_amsua,tnoise(i),tnoise_cld(i),error0(i),io_cloud_bc_amsua)
+                       else
+                          call radiance_ex_obserr_evolve_gauss       (radmod,i,tbc(i),clw_obs,clw_guess_retrieval, &
+                                                                      predictor_amsua,tnoise(i),tnoise_cld(i),error0(i),io_cloud_bc_amsua)
+                       endif
+
+                    endif
+                 enddo
+
+
+              elseif (ng_error_atms .and. atms) then
+
+                 atms_ng_chanls=[1,2,3,4,5,6,16,17,18,19,20,21,22]
+
+                 do i=1,nchanl
+                    if ( ANY(atms_ng_chanls == i) ) then
+                       ! Note that the subroutine
+                       ! "radiance_ex_obserr_evolve_gauss" does not work over all channel
+                       ! instead, it works one channel by one channel:
+
+                       if ( io_ng_table_interp ) then  ! using interpolated values between cloud bins
+                          call radiance_ex_obserr_evolve_gauss_interp(radmod,i,tbc(i),clw_obs,clw_guess_retrieval, &
+                                                                      predictor_atms,tnoise(i),tnoise_cld(i),error0(i),io_cloud_bc_atms)
+                       else
+                          call radiance_ex_obserr_evolve_gauss       (radmod,i,tbc(i),clw_obs,clw_guess_retrieval, &
+                                                                      predictor_atms,tnoise(i),tnoise_cld(i),error0(i),io_cloud_bc_atms)
+                       endif
+
+
+
+                    endif
+                 enddo
+
+              endif
+
+              !if (mype==150) write(6,*) 'after ng table: error0 = ', error0
+
+
+
+           elseif (radmod%ex_obserr=='ex_obserr3') then
+
+              ! CCH
+              !call tell('setuprad','call symmetric observation error (ex_obserr3)')
+
+              call radiance_ex_obserr_gmi(radmod,nchanl,clw_obs,clw_guess_retrieval,tnoise,tnoise_cld,error0) 
+           endif
+  
+        end if
+ 
 !       screen out observations with normalized (by symmetric error) FG
 !       departure > 2.5
+!       CCH: allsky_gdfl = .false. so not implementing the below block:     
+!        write(6,*) 'allsky_gfdl = ', allsky_gfdl
+
         if(radmod%lcloud_fwd .and. radmod%ex_obserr=='ex_obserr1' .and. &
            eff_area .and. allsky_gfdl) then
            do i=1,nchanl
@@ -1423,6 +1552,17 @@ contains
            endif
 !       End of loop over channels         
         end do
+
+
+        ! CCH: before QC:
+        !if (amsua) then
+        !   do i=1,nchanl
+        !      if ( ANY(amsua_ng_chanls == nuchan(i)) ) then
+        !         IF (mype==109) write(6,*) 'before QC: channel ', nuchan(i),'varinv is ', varinv(i)
+        !      endif
+        !   enddo
+        !endif
+
 
 !******
 !    QC OBSERVATIONS BASED ON VARIOUS CRITERIA
@@ -1701,8 +1841,18 @@ contains
                  if(radmod%rtype == 'amsua' .and. (i <=5 .or. i==15) ) then 
                     if (radmod%lprecip .and. .not. allsky_gfdl) then
                        errf(i) = 2.5_r_kind*errf(i)
+
+                    ! CCH: non-Gaussian error does not need a strict bound on the
+                    ! gross error check. This bound should only be used to kick
+                    ! out errorneous observations. Also, this bound should not
+                    ! be too small to kick out observations with small
+                    ! innovations
+                    elseif ( ng_error_amsua ) then
+                       errf(i) = 5.0_r_kind*errf(i)
+
                     else
                        errf(i) = three*errf(i)
+
                     endif
                  else if(radmod%rtype == 'atms' .and. (i <= 6 .or. i>=16) ) then
                     if (radmod%lprecip .and. .not. allsky_gfdl) then
@@ -1733,6 +1883,14 @@ contains
                  varinv(i) = zero
                  if(luse(n))stats(2,m) = stats(2,m) + one
                  if(luse(n))aivals(7,is) = aivals(7,is) + one
+ 
+                 ! CCH currently aivals(36) is not used yet
+                 ! put aivals(36) to be the number of "ifail_gross_qc"
+                 ! for AMUSA ch1-5 & 15
+                 if ( luse(n).and.amsua ) then
+                    if (i<=5 .or. i==15) aivals(36,is) = aivals(36,is) + one
+                 endif
+
               end if
            end if
         end do
@@ -1906,6 +2064,7 @@ contains
   
         icc = 0
         iccm= 0
+
 
         do i = 1,nchanl
 
@@ -2250,7 +2409,7 @@ contains
         end if
      endif ! (in_curbin)
 
-
+! CCH note: the end of a huge obs-loop (index = n)
 ! End of n-loop over obs
   end do
 
@@ -2653,6 +2812,12 @@ contains
     type(obs_diag),pointer:: obsptr     ! not yet in use
         ! obsptr => odiags(ich_diag(i)); for i=1,nchanl_diag
 
+    ! CCH: temporary variable to turn off the original save_jacobian code
+    logical:: save_jacobian_orig
+
+    ! CCH: tempoaray variable
+    character(len=50):: cloud_type_name, netcdf_var_name
+
 ! Observation class
   character(7),parameter     :: obsclass = '    rad'
   real(r_single),parameter::  missing = -9.99e9_r_single
@@ -2777,7 +2942,53 @@ contains
                  errinv = sqrt(varinv(ich_diag(i)))
                  call nc_diag_metadata_to_single("Inverse_Observation_Error_scaled",errinv           )
                  endif
+
+                 ! CCH: rewrite the output of Jacobian/Inner domain variables for radiance observations
                  if (save_jacobian) then
+                    ! the input model state to CRTM -- surface variables
+                    call nc_diag_metadata_to_single("Inner_domain_U", u_in) 
+                    call nc_diag_metadata_to_single("Inner_domain_V", v_in) 
+
+
+                    ! the input model state to CRTM -- atmosphere profile (look at crtm_interface.f90 to see the order of variables)
+                    call nc_diag_data2d("Inner_domain_Pressure",    real(atprofile(:,1),r_single))
+                    call nc_diag_data2d("Inner_domain_Temperature", real(atprofile(:,2),r_single)) 
+                    call nc_diag_data2d("Inner_domain_Water_Vapor", real(atprofile(:,3),r_single)) 
+                    call nc_diag_data2d("Inner_domain_Ozone",       real(atprofile(:,4),r_single)) 
+                    call nc_diag_data2d("Inner_domain_Cloud_Frac", real(atprofile(:,5),r_single))
+
+                    do ii = 1, n_clouds_fwd ! cloud variables
+                       cloud_type_name = cloud_names_fwd(ii)
+                       netcdf_var_name = "Inner_domain_"//trim(cloud_type_name)
+
+                       call nc_diag_data2d(netcdf_var_name,  real(atprofile(:,5+ii),r_single)) 
+                    enddo
+
+                    ! the Jacobian output from CRTM -- surface variables
+                    call nc_diag_metadata_to_single("Jacobian_U", u_jac(ich_diag(i)))
+                    call nc_diag_metadata_to_single("Jacobian_V", v_jac(ich_diag(i)))
+                    call nc_diag_metadata_to_single("Jacobian_Surface_Temp", ts(ich_diag(i)))
+
+                    
+                    ! the Jacobian output from CRTM -- atmosphere profile (loot at crtm_interface.f90 to see the order of variables)
+                    call nc_diag_data2d("Jacobian_Temperature", real(jacobian0(             1:       msig,ich_diag(i)),r_single))
+                    call nc_diag_data2d("Jacobian_Water_Vapor", real(jacobian0(        msig+1:     2*msig,ich_diag(i)),r_single))
+                    call nc_diag_data2d("Jacobian_Ozone",       real(jacobian0(      2*msig+1:     3*msig,ich_diag(i)),r_single))
+
+                    do ii = 1, n_clouds_jac ! cloud variables
+                       cloud_type_name = cloud_names_jac(ii)
+                       netcdf_var_name = "Jacobian_"//trim(cloud_type_name)
+                       call nc_diag_data2d(netcdf_var_name,     real(jacobian0( (2+ii)*msig+1:(3+ii)*msig,ich_diag(i)),r_single))
+                    enddo
+
+
+                 endif
+
+
+
+
+                 save_jacobian_orig = .false. ! turn off the save of the original Jacobian code below
+                 if (save_jacobian_orig) then
                     j = 1
                     do ii = 1, nvarjac
                        state_ind = getindex(svars3d, radjacnames(ii))

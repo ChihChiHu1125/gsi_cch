@@ -77,6 +77,10 @@
   use radinfo, only: crtm_coeffs_path,optconv,crtm_overlap,rewopt,reiopt, &
                      allsky_gfdl,allsky_verbose,cloud_mask_option,mask_threshold, &
                      hydrotable_format,hydrotype
+! CCH
+  use radinfo, only: situ_oberr_infla_all, situ_oberr_infla_only_scatter_wind, channel_sensitivity_test, & 
+                     ng_error_amsua, ng_error_atms, io_cloud_bc_amsua, io_cloud_bc_atms, &
+                     io_ng_table_interp, predictor_amsua, predictor_atms, save_radjac_anyway, every_5th_scan_atms
 
   use ozinfo, only: diag_ozone,init_oz
   use aeroinfo, only: diag_aero, init_aero, init_aero_vars, final_aero_vars
@@ -792,6 +796,8 @@
 !     NOTE:  for now, if in regional mode, then iguess=-1 is forced internally.
 !            add use of guess file later for regional mode.
 
+! CCH: remember to add new namelist variables to here as well:
+
   namelist/setup/gencode,factqmin,factqmax,superfact,limitqobs,clip_supersaturation, &
        clip_hydrometeor,factql,factqi,factqr,factqs,factqg, &     
        factv,factl,factp,factg,factw10m,facthowv,factcldch,R_option,deltim,dtphys,&
@@ -836,6 +842,9 @@
        cao_check,lcalc_gfdl_cfrac,tau_fcst,efsoi_order,lupdqc,lqcoef,cnvw_option,l2rwthin,hurricane_radar,&
        l_reg_update_hydro_delz, l_obsprvdiag,&
        l_use_dbz_directDA, l_use_rw_columntilt, ta2tb, optconv, &
+       situ_oberr_infla_all, situ_oberr_infla_only_scatter_wind, channel_sensitivity_test, &
+       ng_error_amsua, ng_error_atms, io_cloud_bc_amsua, io_cloud_bc_atms, io_ng_table_interp, &
+       predictor_amsua, predictor_atms, save_radjac_anyway, every_5th_scan_atms, &
        r_hgt_fed
 
 ! GRIDOPTS (grid setup variables,including regional specific variables):
